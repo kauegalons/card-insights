@@ -115,3 +115,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx wrangler deploy
+      # the test report Worker too, so the first push to main creates both Workers the PR previews upload to
+      - run: npm test
+      - run: npx wrangler deploy -c reports.wrangler.jsonc

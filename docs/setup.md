@@ -28,18 +28,12 @@ Both previews are linked from the sticky test report comment on the PR, with one
    gh secret set CLOUDFLARE_API_TOKEN
    gh secret set CLOUDFLARE_ACCOUNT_ID
    ```
-5. **First deploy, once, by hand.** `wrangler versions upload` (the PR previews) refuses a Worker that does not exist yet, so create both Workers before the first PR:
-   ```sh
-   npx wrangler login
-   npm run build && npx wrangler deploy                                 # the app
-   GITHUB_ACTIONS=1 npm test && npx wrangler deploy -c reports.wrangler.jsonc   # the test report Worker
-   ```
-   The first prints the app URL, `https://card-insights.<your-subdomain>.workers.dev`. To use other Worker names, change `name` in `wrangler.jsonc` and `reports.wrangler.jsonc` first.
-6. **After that, CI deploys.** Every push to `main` runs the `deploy` job (`npm run build`, `npx wrangler deploy`), and every PR commit uploads its previews.
+5. **Merge to `main`.** Every push to `main` runs the `deploy` job: it builds and deploys the app (`npx wrangler deploy`), then runs the tests and deploys the Vitest UI report (`npx wrangler deploy -c reports.wrangler.jsonc`). The first run creates both Workers and prints the app URL, `https://card-insights.<your-subdomain>.workers.dev`. To use other Worker names, change `name` in `wrangler.jsonc` and `reports.wrangler.jsonc` first.
+6. **Then every PR commit uploads its previews.** `wrangler versions upload` refuses a Worker that does not exist yet, so PRs opened before the first deploy to `main` show only the test results; re-run their job after it.
 
 ## Previews
 
-Preview URLs are on for both Workers (`"preview_urls": true`). A PR from a fork gets no secrets: its upload steps fail without failing the job (`continue-on-error`), and the comment shows only the test results. If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", step 5 was skipped: run it and re-run the job.
+Preview URLs are on for both Workers (`"preview_urls": true`). A PR from a fork gets no secrets: its upload steps fail without failing the job (`continue-on-error`), and the comment shows only the test results. If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", `main` has not deployed yet: wait for the first `deploy` job and re-run the PR job.
 
 ## Related
 
