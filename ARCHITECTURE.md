@@ -39,8 +39,6 @@ flowchart LR
 
 ## Repository
 
-The layout below arrives with the scaffold (T01).
-
 ```
 src/
   domain/        types and pure rules: money, transaction, category

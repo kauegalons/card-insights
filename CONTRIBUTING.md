@@ -2,7 +2,7 @@
 
 ## Development
 
-Node 24 or later. The scripts below arrive with the scaffold (T01).
+Node 24 or later (`.nvmrc`).
 
 ```sh
 npm ci
