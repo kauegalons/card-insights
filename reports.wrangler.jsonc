@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The Vitest UI report of each PR (reports/html), published as its own Worker so it never mixes with the app.
+  // It holds test code and fictitious fixtures only, never user data.
+  "name": "card-insights-tests",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./reports/html" },
+  "workers_dev": true,
+  "preview_urls": true
+}

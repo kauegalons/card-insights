@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The app: static files only, no Worker script (ADR 001, ADR 004).
+  // account_id comes from the CLOUDFLARE_ACCOUNT_ID environment variable, so forks need no edit here.
+  "name": "card-insights",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    // client-side routes fall back to index.html
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": true,
+  // per-PR previews: `wrangler versions upload --preview-alias pr-<N>`
+  "preview_urls": true
+}
