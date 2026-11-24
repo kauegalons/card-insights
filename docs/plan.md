@@ -117,7 +117,7 @@ Documentação base, no formato da referência.
 - Interface `ImportAdapter { id; detect(file): boolean; parse(text, meta): ParsedRow[] }`.
 - Adaptador `nubank-card-csv`: detecta pelo cabeçalho `date,title,amount`.
 - Extrai `Parcela n/N`; tira o sufixo do `merchant`.
-- `Pagamento recebido` → `payment`; `IOF…` → `fee`; valor negativo que não é pagamento → `refund`.
+- `Pagamento recebido` → `payment`; `IOF…` e `Juros…` → `fee`; valor negativo que não é pagamento → `refund`.
 - Normaliza prefixos (`Mlp*`, `Wl *`, `Dl*`, `Htm*`, `Pg *`, `I*Vmt*Cielo`).
 - `statementId` a partir do nome do arquivo (`Nubank_AAAA-MM-DD.csv`) ou, sem ele, da data mais recente.
 - **Aceite:** a fixture fictícia (mesmo formato do CSV real) vira as linhas esperadas; um CSV de outro formato não é detectado.
@@ -130,7 +130,7 @@ Documentação base, no formato da referência.
 - **Aceite (casos de teste):**
   - reimportar o mesmo arquivo → `added: 0`;
   - duas compras legítimas iguais no mesmo dia → as duas ficam;
-  - importação parcial e depois a fatura fechada → só as novas entram;
+  - importação parcial e depois a fatura fechada → só as novas entram, mesmo quando o arquivo parcial não tem a data de fechamento no nome;
   - parcela 9/12 e 10/12 do mesmo comerciante → são diferentes.
 
 ### T07 · `feat/storage-indexeddb`
@@ -250,4 +250,4 @@ T00 → T01 → T02 → T03
                           T20 → T21 → T22
 ```
 
-T04–T12 são TypeScript puro e testável sem UI, então dá para fazer em paralelo com o T13 depois da T03.
+T04–T12 são TypeScript puro e testável sem UI, então a T13 (shell da UI) pode começar em paralelo logo depois da T03. A seta T12 → T13 vale só para as páginas que consomem a análise (T16, T17).

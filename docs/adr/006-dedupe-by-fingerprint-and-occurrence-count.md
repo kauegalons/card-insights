@@ -13,7 +13,7 @@ Users will import the same statement more than once: by mistake, or a partial ex
 ## Decision
 
 1. Each row gets a **fingerprint**: `date | normalizedMerchant | amountCents | installment` (`n/total`, or `-`).
-2. Dedupe compares **counts**, not presence, within the same statement: for each fingerprint, add `max(0, countInFile − countStored)`. The file has 3, the store has 2 → 1 is added.
+2. Dedupe compares **counts**, not presence, over the stored transactions within the file's date range (not the statement id, which a partial export may not carry in its file name): for each fingerprint, add `max(0, countInFile − countStored)`. The file has 3, the store has 2 → 1 is added.
 3. A row with a new fingerprint but the same `date + amountCents` as a stored row with a different merchant is added with status **`review`**: the bank may have renamed it. The user keeps both or discards one.
 4. The import returns `ImportSummary { added, existing, review }`.
 
@@ -36,7 +36,7 @@ Users will import the same statement more than once: by mistake, or a partial ex
 **Costs**
 - If the bank removes a row from a later export (e.g. a cancelled purchase), dedupe doesn't delete it; the user deletes it by hand.
 - If the bank changes a merchant name in a way that also changes the date or amount, the row duplicates.
-- Counting is per statement, so a row that moves to another statement isn't matched.
+- Counting is over the file's date range, so a stored row that falls outside it is never matched; that is correct, since its fingerprint holds a date outside the file.
 
 ## Revisit when
 
