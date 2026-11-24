@@ -1,0 +1,14 @@
+# Privacy: statements never enter the repository.
+# Only fictitious fixtures under test/fixtures/ are allowed.
+*.csv
+*.ofx
+*.pdf
+!test/fixtures/**
+
+# Build and tooling (extended by the scaffold in T01)
+node_modules/
+dist/
+reports/
+.wrangler/
+.env
+.dev.vars
