@@ -37,7 +37,7 @@ git clone https://github.com/kauegalons/card-insights && cd card-insights
 npm ci && npm run build      # the app is in dist/
 ```
 
-Step-by-step for your own Cloudflare account (fork, API token, first deploy): `docs/setup.md`, added in T03.
+Step-by-step for your own Cloudflare account (fork, API token, secrets, previews): [docs/setup.md](docs/setup.md).
 
 ## Links
 

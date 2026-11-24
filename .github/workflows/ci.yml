@@ -8,8 +8,12 @@ on:
 permissions:
   contents: read
 
+env:
+  WRANGLER_SEND_METRICS: false
+
 concurrency:
   group: ci-${{ github.ref }}
+  # cancel superseded PR runs, never an in-progress deploy on main
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -27,8 +31,34 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test -- --reporter=default --reporter=json --outputFile.json=reports/tests.json
+      - run: npm test # in CI also writes reports/tests.json and reports/html (vite.config.ts)
       - run: npm run build
+      # Previews are public URLs. The app holds no data (it all stays in the visitor's browser), and the
+      # test report holds only test code and fictitious fixtures. Fork PRs get no secrets, so both are skipped there.
+      - name: Upload the app preview
+        id: app
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          npx wrangler versions upload --preview-alias "pr-$PR" 2>&1 | tee upload.log
+          node scripts/preview-urls.ts < upload.log >> "$GITHUB_OUTPUT"
+      - name: Upload the Vitest UI report
+        id: ui
+        if: always() && github.event_name == 'pull_request' && hashFiles('reports/html/index.html') != ''
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          npx wrangler versions upload -c reports.wrangler.jsonc --preview-alias "pr-$PR" 2>&1 | tee upload.log
+          node scripts/preview-urls.ts < upload.log >> "$GITHUB_OUTPUT"
       - name: Post the test report on the PR
         if: always() && github.event_name == 'pull_request' && hashFiles('reports/tests.json') != ''
         continue-on-error: true # fork PRs get a read-only token
@@ -36,21 +66,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          APP_URL: ${{ steps.app.outputs.alias_url }}
+          APP_VERSION_URL: ${{ steps.app.outputs.version_url }}
+          UI_URL: ${{ steps.ui.outputs.alias_url }}
+          UI_VERSION_URL: ${{ steps.ui.outputs.version_url }}
         run: |
-          jq -r --arg sha "${HEAD_SHA:0:7}" --arg run "$RUN_URL" '
-            "<!-- test-report -->",
-            "## Test report " + (if .success then "✅" else "❌" end),
-            "",
-            "| Passed | Failed | Skipped | Total |",
-            "|---:|---:|---:|---:|",
-            "| \(.numPassedTests) | \(.numFailedTests) | \(.numPendingTests + .numTodoTests) | \(.numTotalTests) |",
-            "",
-            ([.testResults[].assertionResults[] | select(.status == "failed") | "- `" + .fullName + "`"]
-              | if length > 0 then "### Failed\n" + join("\n") + "\n" else empty end),
-            "Commit `\($sha)` · [run](\($run))"
-          ' reports/tests.json > report.md
           id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- test-report -->")) | .id' | tail -1)
+          if [ -n "$id" ]; then gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body > previous.md; else : > previous.md; fi
+          PREVIOUS=previous.md node scripts/test-report.ts reports/tests.json > report.md
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md >/dev/null
           else
@@ -67,3 +90,28 @@ jobs:
           node-version-file: .nvmrc
       - name: No statements outside test/fixtures/
         run: git ls-files -z | node scripts/check-data-files.ts
+
+  deploy:
+    needs: [test, privacy-guard]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check the deploy secrets
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::Set the CLOUDFLARE_API_TOKEN repository secret to deploy (docs/setup.md)."; exit 1; }
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "::error::Set the CLOUDFLARE_ACCOUNT_ID repository secret to deploy (docs/setup.md)."; exit 1; }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx wrangler deploy
