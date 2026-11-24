@@ -28,15 +28,18 @@ Both previews are linked from the sticky test report comment on the PR, with one
    gh secret set CLOUDFLARE_API_TOKEN
    gh secret set CLOUDFLARE_ACCOUNT_ID
    ```
-5. **Deploy**: merge to `main` (or push to it). The `deploy` job builds and runs `npx wrangler deploy`; its log prints the URL, `https://card-insights.<your-subdomain>.workers.dev`. To use another Worker name, change `name` in `wrangler.jsonc` (and in `reports.wrangler.jsonc`).
-
-Deploying by hand works too: `npx wrangler login`, then `npm run build && npx wrangler deploy`.
+5. **First deploy, once, by hand.** `wrangler versions upload` (the PR previews) refuses a Worker that does not exist yet, so create both Workers before the first PR:
+   ```sh
+   npx wrangler login
+   npm run build && npx wrangler deploy                                 # the app
+   GITHUB_ACTIONS=1 npm test && npx wrangler deploy -c reports.wrangler.jsonc   # the test report Worker
+   ```
+   The first prints the app URL, `https://card-insights.<your-subdomain>.workers.dev`. To use other Worker names, change `name` in `wrangler.jsonc` and `reports.wrangler.jsonc` first.
+6. **After that, CI deploys.** Every push to `main` runs the `deploy` job (`npm run build`, `npx wrangler deploy`), and every PR commit uploads its previews.
 
 ## Previews
 
-Preview URLs need **Preview URLs** enabled for each Worker (`"preview_urls": true` in both configs, applied on upload). A PR from a fork gets no secrets, so its run skips the uploads and the comment shows only the test results.
-
-If a PR's upload step fails because the Worker doesn't exist yet, deploy it once (step 5, or by hand; for the report, `npx wrangler deploy -c reports.wrangler.jsonc` after `GITHUB_ACTIONS=1 npm test` writes `reports/html`) and re-run the job.
+Preview URLs are on for both Workers (`"preview_urls": true`). A PR from a fork gets no secrets: its upload steps fail without failing the job (`continue-on-error`), and the comment shows only the test results. If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", step 5 was skipped: run it and re-run the job.
 
 ## Related
 
