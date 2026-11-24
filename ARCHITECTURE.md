@@ -25,7 +25,7 @@ flowchart LR
 |---|---|---|
 | Where the data lives | Only in the browser. The host serves static files; there is no API | [ADR 001](docs/adr/001-static-app-without-backend.md) |
 | UI and build | Preact + Vite + TypeScript `strict`; Vitest for tests | [ADR 002](docs/adr/002-preact-vite-typescript-strict.md) |
-| Storage | IndexedDB through `idb`: stores `transactions`, `imports`, `rules`, `categories`, `settings`, with versioned migrations and JSON backup | [ADR 003](docs/adr/003-indexeddb-for-storage.md) |
+| Storage | IndexedDB through `idb`: stores `transactions`, `imports`, `rules`, `categories`, `settings`, `dismissed`, with versioned migrations and JSON backup | [ADR 003](docs/adr/003-indexeddb-for-storage.md) |
 | Hosting and deploy | Cloudflare Workers Static Assets with SPA fallback; deploy on merge, preview URL per PR (alternative: GitHub Pages) | [ADR 004](docs/adr/004-cloudflare-workers-static-assets-hosting.md) |
 | Money | Integer cents everywhere; a pt-BR parser and formatter at the edges | [ADR 005](docs/adr/005-money-in-integer-cents.md) |
 | Re-imports | Fingerprint (`date + merchant + amount + installment`) plus occurrence count; near-matches go to review | [ADR 006](docs/adr/006-dedupe-by-fingerprint-and-occurrence-count.md) |

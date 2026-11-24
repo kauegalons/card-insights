@@ -126,6 +126,7 @@ Documentação base, no formato da referência.
 - `fingerprint = date + merchantNormalizado + amountCents + installment`.
 - **Contagem de ocorrências:** se o arquivo tem 3 iguais e o banco tem 2, entra 1.
 - **Possível alteração:** mesmo `date + amountCents`, título diferente → status `review`.
+- Desconta as ocorrências excluídas pelo usuário (store `dismissed`, ver T15).
 - Retorna `ImportSummary { added, existing, review }`.
 - **Aceite (casos de teste):**
   - reimportar o mesmo arquivo → `added: 0`;
@@ -134,7 +135,7 @@ Documentação base, no formato da referência.
   - parcela 9/12 e 10/12 do mesmo comerciante → são diferentes.
 
 ### T07 · `feat/storage-indexeddb`
-- Biblioteca `idb`. Stores: `transactions`, `imports`, `rules`, `categories`, `settings`.
+- Biblioteca `idb`. Stores: `transactions`, `imports`, `rules`, `categories`, `settings`, `dismissed`.
 - Versão de esquema com migrações.
 - Backup: exportar e importar tudo em JSON; apagar todos os dados.
 - **Aceite:** testes com `fake-indexeddb`; um backup restaurado é idêntico ao original.
@@ -197,7 +198,8 @@ Documentação base, no formato da referência.
 
 ### T15 · `feat/ui-transactions`
 - Lista com filtros (fatura, categoria, texto), edição da categoria (dispara a T09).
-- **Aceite:** listas longas continuam fluidas no celular.
+- **Excluir transação** (ex.: compra cancelada que sumiu do CSV), com confirmação e opção de desfazer logo em seguida. A exclusão vale também para itens em revisão.
+- **Aceite:** listas longas continuam fluidas no celular; uma transação excluída some dos totais e não volta ao reimportar o mesmo arquivo (a exclusão grava a impressão digital no store `dismissed`, que a dedupe da T06 desconta).
 
 ### T16 · `feat/ui-dashboard`
 - Gráfico de barras por categoria, tendência mensal, cartões de resumo e parcelas futuras.
