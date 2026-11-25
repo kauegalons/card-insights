@@ -1,9 +1,11 @@
 /// <reference types="node" />
-// Privacy guard: statements (.csv, .ofx, .pdf) may only live in test/fixtures/.
+// Privacy guard: statements and their exports (.csv, .ofx, .qfx, .qif, .pdf, .xls, .xlsx, .ods, .zip,
+// also compressed, e.g. .csv.gz) may only live in test/fixtures/.
 // Usage: git ls-files -z | node scripts/check-data-files.ts
+//        git log -z --name-only --diff-filter=A --format= origin/main..HEAD | node scripts/check-data-files.ts
 import { readFileSync } from 'node:fs';
 
-const DATA_FILE = /\.(csv|ofx|pdf)$/i;
+const DATA_FILE = /\.(csv|ofx|qfx|qif|pdf|xls|xlsx|ods|zip)(\.(gz|bz2|xz|zst|7z|br))?$/i;
 const FIXTURES_DIR = 'test/fixtures/';
 
 export function findDataFilesOutsideFixtures(paths: readonly string[]): string[] {
@@ -18,5 +20,5 @@ if (import.meta.main) {
     for (const path of offenders) console.error(`  ${path}`);
     process.exit(1);
   }
-  console.log(`OK: ${paths.length} tracked files, no data files outside ${FIXTURES_DIR}.`);
+  console.log(`OK: ${paths.length} files, no data files outside ${FIXTURES_DIR}.`);
 }

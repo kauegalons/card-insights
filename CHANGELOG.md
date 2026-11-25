@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- **Privacy guard** catches more statement formats: `.csv`, `.ofx`, `.qfx`, `.qif`, `.pdf`, `.xls`, `.xlsx`, `.ods`, `.zip` and compressed variants (`.csv.gz`, `.ofx.bz2`, ...), any case, still allowed under `test/fixtures/`. On PRs it also checks every file added by any PR commit, so a statement added and then deleted cannot slip into history. `.gitignore` lists the new extensions, and `tsconfig.json` now typechecks `scripts/`.
 - **CI hardening**: Cloudflare secrets are scoped to the steps that run Wrangler, never to `npm ci`, the build or the tests. PR code runs in the `test` job with a read-only token; a separate `report` job holds `pull-requests: write`, runs the base branch's `scripts/test-report.ts` on the `test` job's artifact and only updates a test report comment written by `github-actions[bot]`. PRs are tested at their head commit, so the report's line links match. The `deploy` job reuses the `test` job's Vitest UI report instead of running the tests a second time after the app is live.
 
 ### Added

@@ -138,12 +138,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0 # every PR commit, not just the tip
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
       - name: No statements outside test/fixtures/
         run: git ls-files -z | node scripts/check-data-files.ts
+      # A statement added in one commit and deleted in a later one still lands in main's history.
+      - name: No statements added by any commit of the PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: git log -z --name-only --diff-filter=A --format= "origin/$BASE..HEAD" | node scripts/check-data-files.ts
 
   deploy:
     needs: [test, privacy-guard]
