@@ -11,4 +11,5 @@ Each ADR records one decision: context, decision, alternatives, consequences and
 | [005](005-money-in-integer-cents.md) | Money in integer cents | Accepted |
 | [006](006-dedupe-by-fingerprint-and-occurrence-count.md) | Dedupe by fingerprint and occurrence count | Accepted |
 | [007](007-editable-rules-for-categorization-without-ai.md) | Categorization by editable rules, without AI | Accepted |
-| [008](008-data-durability-local-first-sync-ready.md) | Data durability: local first (persistent storage, PWA, automatic backup), storage ready for a later sync | Accepted |
+| [008](008-data-durability-local-first-sync-ready.md) | Data durability: local first (persistent storage, PWA, automatic backup), storage ready for a later sync (clock and record identity: [009](009-sync-clock-and-record-identity.md)) | Accepted |
+| [009](009-sync-clock-and-record-identity.md) | Sync clock and record identity: random ids as keys (never fingerprints), one `dismissed` record per occurrence, strictly increasing per-device `updatedAt` plus `updatedBy` | Accepted |

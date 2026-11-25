@@ -2,7 +2,7 @@
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction, type StoreNames } from 'idb';
 import type { Category, Rule } from '../domain/category';
 import type { Transaction } from '../domain/transaction';
-import type { DismissedOccurrences, ImportSummary } from '../import/dedupe';
+import type { DismissedOccurrence, ImportSummary } from '../import/dedupe';
 
 export const DB_NAME = 'card-insights';
 
@@ -10,9 +10,12 @@ export const DB_NAME = 'card-insights';
 export type Clock = () => Date;
 export const systemClock: Clock = () => new Date();
 
-/** Sync fields every synced record carries (ADR 008). ISO timestamps. */
+/** Sync fields every synced record carries (ADR 008, ADR 009). ISO timestamps. */
 export interface SyncFields {
+  /** Strictly increasing per device: see `nextStamp`. */
   updatedAt: string;
+  /** The deviceId that wrote it; breaks `updatedAt` ties in last-write-wins. */
+  updatedBy: string;
   /** Tombstone: set by `remove`; `get` and `list` skip the record. */
   deletedAt?: string;
 }
@@ -28,8 +31,9 @@ export interface ImportRecord {
   summary: ImportSummary;
 }
 
-/** Occurrences of a fingerprint the user deleted, so a re-import doesn't bring them back. Keyed by fingerprint. */
-export interface DismissedRecord extends DismissedOccurrences {
+/** One occurrence the user deleted, so a re-import doesn't bring it back. Keyed by a random id, never the fingerprint (ADR 009). */
+export interface DismissedRecord extends DismissedOccurrence {
+  id: string;
   dismissedAt: string;
 }
 
@@ -41,6 +45,8 @@ export interface Settings {
   lastBackupAt: string;
   /** Unused until Phase 6 (sync). */
   lastSyncAt: string;
+  /** The last `updatedAt` this device stamped (ADR 009). */
+  lastStampAt: string;
 }
 export type SettingKey = keyof Settings;
 export type SettingRecord = { [K in SettingKey]: { key: K; value: Settings[K] } }[SettingKey];
@@ -52,7 +58,7 @@ export interface Schema extends DBSchema {
   imports: SyncedStore<ImportRecord>;
   rules: SyncedStore<Rule>;
   categories: SyncedStore<Category>;
-  dismissed: SyncedStore<DismissedRecord>;
+  dismissed: SyncedStore<DismissedRecord, { fingerprint: string }>;
   settings: { key: SettingKey; value: SettingRecord };
 }
 
@@ -66,7 +72,7 @@ export const KEY_PATHS = {
   imports: 'id',
   rules: 'id',
   categories: 'id',
-  dismissed: 'fingerprint',
+  dismissed: 'id',
   settings: 'key',
 } as const satisfies Record<StoreName, string>;
 export const STORE_NAMES = Object.keys(KEY_PATHS) as StoreName[];
@@ -79,9 +85,11 @@ export const migrations: readonly Migration[] = [
   (db) => {
     const transactions = db.createObjectStore('transactions', { keyPath: KEY_PATHS.transactions });
     for (const index of ['statementId', 'fingerprint', 'date', 'updatedAt'] as const) transactions.createIndex(index, index);
-    for (const name of ['imports', 'rules', 'categories', 'dismissed'] as const) {
+    for (const name of ['imports', 'rules', 'categories'] as const) {
       db.createObjectStore(name, { keyPath: KEY_PATHS[name] }).createIndex('updatedAt', 'updatedAt');
     }
+    const dismissed = db.createObjectStore('dismissed', { keyPath: KEY_PATHS.dismissed });
+    for (const index of ['fingerprint', 'updatedAt'] as const) dismissed.createIndex(index, index);
     db.createObjectStore('settings', { keyPath: KEY_PATHS.settings });
   },
 ];
@@ -107,11 +115,22 @@ export async function runInTransaction(
   await Promise.all(pending);
 }
 
-/** Opens (creating or upgrading) the database, running the missing migrations in order. */
-export function openDatabase(name = DB_NAME, steps: readonly Migration[] = migrations): Promise<Db> {
-  return openDB<Schema>(name, steps.length, {
+export interface OpenOptions {
+  /** Another tab holds an older version open and won't close; the UI asks the user to close it. */
+  onBlocked?: () => void;
+}
+
+/**
+ * Opens (creating or upgrading) the database, running the missing migrations in order. When another tab
+ * opens a newer version this connection closes, so that upgrade isn't blocked; this tab must then reload.
+ */
+export async function openDatabase(name = DB_NAME, steps: readonly Migration[] = migrations, options: OpenOptions = {}): Promise<Db> {
+  const db: Db = await openDB<Schema>(name, steps.length, {
     upgrade(db, oldVersion, _newVersion, tx) {
       for (const step of steps.slice(oldVersion)) step(db, tx);
     },
+    blocked: () => options.onBlocked?.(),
+    blocking: () => db.close(),
   });
+  return db;
 }

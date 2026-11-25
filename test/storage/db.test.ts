@@ -1,5 +1,5 @@
 import { openDB } from 'idb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DB_NAME, SCHEMA_VERSION, migrations, openDatabase, type Migration } from '../../src/storage/db';
 import './helpers';
 
@@ -19,10 +19,19 @@ describe('openDatabase', () => {
     const db = await openDatabase();
     const tx = db.transaction([...db.objectStoreNames], 'readonly');
     expect([...tx.objectStore('transactions').indexNames].sort()).toEqual(['date', 'fingerprint', 'statementId', 'updatedAt']);
-    for (const store of ['imports', 'rules', 'categories', 'dismissed'] as const) {
+    for (const store of ['imports', 'rules', 'categories'] as const) {
       expect([...tx.objectStore(store).indexNames]).toEqual(['updatedAt']);
     }
-    expect(tx.objectStore('dismissed').keyPath).toBe('fingerprint');
+    expect([...tx.objectStore('dismissed').indexNames].sort()).toEqual(['fingerprint', 'updatedAt']);
+    db.close();
+  });
+
+  it('keys every synced store by id, never by fingerprint (ADR 009)', async () => {
+    const db = await openDatabase();
+    const tx = db.transaction([...db.objectStoreNames], 'readonly');
+    for (const store of ['transactions', 'imports', 'rules', 'categories', 'dismissed'] as const) {
+      expect(tx.objectStore(store).keyPath).toBe('id');
+    }
     expect(tx.objectStore('settings').keyPath).toBe('key');
     db.close();
   });
@@ -43,17 +52,46 @@ describe('openDatabase', () => {
     v3.close();
   });
 
-  it('upgrades a database left at version 1 by the real migrations without losing its records', async () => {
-    const first = migrations[0];
-    if (!first) throw new Error('expected at least one migration');
-    const old = await openDatabase(DB_NAME, [first]);
+  it('upgrades a database at the current version through a new step without losing its records', async () => {
+    const old = await openDatabase(DB_NAME, migrations);
     await old.put('settings', { key: 'deviceId', value: 'device-1' });
     old.close();
 
-    const db = await openDatabase();
-    expect(db.version).toBe(SCHEMA_VERSION);
+    // A synthetic next step, as a real v2 would be appended.
+    const next: Migration = (_db, tx) => {
+      tx.objectStore('transactions').createIndex('importId' as never, 'importId');
+    };
+    const db = await openDatabase(DB_NAME, [...migrations, next]);
+
+    expect(db.version).toBe(SCHEMA_VERSION + 1);
+    expect([...db.transaction('transactions').store.indexNames]).toContain('importId');
     expect(await db.get('settings', 'deviceId')).toEqual({ key: 'deviceId', value: 'device-1' });
     db.close();
+  });
+
+  it('closes itself when another connection needs a newer version, so the upgrade is not blocked', async () => {
+    const onBlocked = vi.fn();
+    const old = await openDatabase('shared', migrations);
+    const next: Migration = (db) => {
+      db.createObjectStore('extra' as never);
+    };
+
+    const db = await openDatabase('shared', [...migrations, next], { onBlocked });
+
+    expect(db.version).toBe(SCHEMA_VERSION + 1);
+    expect(onBlocked).not.toHaveBeenCalled();
+    await expect(old.get('settings', 'deviceId')).rejects.toThrow();
+    db.close();
+  });
+
+  it('reports blocked when an older connection does not close', async () => {
+    const onBlocked = vi.fn();
+    const stubborn = await openDB('shared', 1); // no versionchange handler, like an old tab
+    const opening = openDatabase('shared', [() => undefined, () => undefined], { onBlocked });
+    await vi.waitFor(() => expect(onBlocked).toHaveBeenCalled());
+
+    stubborn.close();
+    (await opening).close();
   });
 
   it('does not open a database newer than this build knows', async () => {

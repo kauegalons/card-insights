@@ -3,12 +3,13 @@ import { deleteAllData, exportBackup, restoreBackup, type Backup } from '../../s
 import { SCHEMA_VERSION, openDatabase, type Db } from '../../src/storage/db';
 import { createRepository } from '../../src/storage/repository';
 import { ensureDeviceId, setSetting } from '../../src/storage/settings';
-import { category, dismissed, fakeClock, importRecord, rule, transaction } from './helpers';
+import { category, dismissed, fakeClock, importRecord, rule, stamped, transaction } from './helpers';
 
 const STORES = ['transactions', 'imports', 'rules', 'categories', 'settings', 'dismissed'] as const;
 
 /** One record in every store, plus a tombstone. */
 async function seed(db: Db): Promise<void> {
+  await ensureDeviceId(db, () => 'device-1');
   const time = fakeClock('2026-11-24T10:00:00.000Z');
   const transactions = createRepository(db, 'transactions', time.clock);
   await transactions.put(transaction('t1'));
@@ -17,8 +18,7 @@ async function seed(db: Db): Promise<void> {
   await createRepository(db, 'rules', time.clock).put(rule('rule-1'));
   await createRepository(db, 'categories', time.clock).put(category('food'));
   await createRepository(db, 'categories', time.clock).put(category('bakery', 'food'));
-  await createRepository(db, 'dismissed', time.clock).put(dismissed('fp-x'));
-  await ensureDeviceId(db, () => 'device-1');
+  await createRepository(db, 'dismissed', time.clock).put(dismissed('d-x', 'fp-x'));
   await setSetting(db, 'statementClosingDay', 11);
   time.set('2026-11-24T11:00:00.000Z');
   await transactions.remove('t2');
@@ -40,7 +40,8 @@ describe('exportBackup', () => {
       ['t1', undefined],
       ['t2', '2026-11-24T11:00:00.000Z'],
     ]);
-    expect(backup.data.dismissed).toEqual([{ ...dismissed('fp-x'), updatedAt: '2026-11-24T10:00:00.000Z' }]);
+    // One stamp per write, strictly increasing (ADR 009): the dismissed record is the seventh.
+    expect(backup.data.dismissed).toEqual([{ ...dismissed('d-x', 'fp-x'), ...stamped('2026-11-24T10:00:00.006Z') }]);
     expect(backup.data.settings).toContainEqual({ key: 'deviceId', value: 'device-1' });
     db.close();
   });
