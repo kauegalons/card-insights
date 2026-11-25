@@ -2,7 +2,13 @@
 # Only fictitious fixtures under test/fixtures/ are allowed.
 *.csv
 *.ofx
+*.qfx
+*.qif
 *.pdf
+*.xls
+*.xlsx
+*.ods
+*.zip
 !test/fixtures/**
 
 # Build and tooling (extended by the scaffold in T01)
