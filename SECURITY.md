@@ -17,7 +17,7 @@ What this does not protect against: anyone with access to your unlocked device a
 
 - **No real data is ever committed.** Statements (`.csv`, `.ofx`, `.pdf`) are git-ignored outside `test/fixtures/`, and from T02 a CI job fails any PR that adds one elsewhere.
 - Fixtures are fictitious: invented merchants and amounts, in the same format as the real files.
-- Deploy secrets (the Cloudflare API token) live only in GitHub Actions secrets.
+- Deploy secrets (the Cloudflare API token and account ID) live only in GitHub Actions secrets.
 
 ## Reporting a vulnerability
 

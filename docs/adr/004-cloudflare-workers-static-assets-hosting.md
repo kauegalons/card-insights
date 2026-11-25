@@ -12,7 +12,7 @@ The app is a folder of static files ([ADR 001](001-static-app-without-backend.md
 
 ## Decision
 
-Host on **Cloudflare Workers Static Assets**: a `wrangler.jsonc` with an `assets` directory (`dist/`) and `not_found_handling: "single-page-application"`, no Worker script. GitHub Actions deploys on push to `main` and uploads a preview version per PR (T03). The only secret is a Cloudflare API token in GitHub Actions secrets.
+Host on **Cloudflare Workers Static Assets**: a `wrangler.jsonc` with an `assets` directory (`dist/`) and `not_found_handling: "single-page-application"`, no Worker script. GitHub Actions deploys on push to `main` and uploads a preview version per PR (T03). It needs two GitHub Actions secrets: a Cloudflare API token and the Cloudflare account ID.
 
 ## Alternatives considered
 
@@ -31,7 +31,7 @@ Host on **Cloudflare Workers Static Assets**: a `wrangler.jsonc` with an `assets
 - Room to add a Worker later (e.g. security headers) without moving host.
 
 **Costs**
-- Deploying your own needs a Cloudflare account and an API token.
+- Deploying your own needs a Cloudflare account, an API token and the account ID.
 - The repo depends on `wrangler` in CI.
 
 ## Revisit when

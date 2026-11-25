@@ -33,7 +33,18 @@ Both previews are linked from the sticky test report comment on the PR, with one
 
 ## Previews
 
-Preview URLs are on for both Workers (`"preview_urls": true`). A PR from a fork gets no secrets: its upload steps fail without failing the job (`continue-on-error`), and the comment shows only the test results. If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", `main` has not deployed yet: wait for the first `deploy` job and re-run the PR job.
+Preview URLs are on for both Workers (`"preview_urls": true`). The `test` job runs the PR's code with a read-only token; the Cloudflare secrets reach only its upload steps, and a separate `report` job, which runs the base branch's code, writes the sticky comment.
+
+**PRs from forks** get no secrets and only a read-only token: their upload steps fail without failing the job (`continue-on-error`), and the `report` job cannot write to the PR, so **a fork PR gets no comment at all**. Its results are in the checks (the `test` job log and its `test-reports` artifact). If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", `main` has not deployed yet: wait for the first `deploy` job and re-run the PR job.
+
+### Retention: previews stay public after the PR closes
+
+Closing or merging a PR does not remove anything. The `pr-<N>` alias URLs and every per-commit version URL of both Workers stay reachable by anyone with the link until you remove them. They hold no user data (the app keeps everything in the visitor's browser; the report holds test code and fictitious fixtures), but they do expose old builds and test code.
+
+Wrangler has no command to delete a single preview alias, so CI does not clean them up. To take them down:
+
+- **All previews of a Worker**: set `"preview_urls": false` in `wrangler.jsonc` (or `reports.wrangler.jsonc`) and deploy, or turn off Preview URLs in the dashboard (Workers & Pages → the Worker → Settings → Domains & Routes). Turn it back on before the next PR needs a preview.
+- **Everything, including production**: delete the Worker (`npx wrangler delete`, or `npx wrangler delete -c reports.wrangler.jsonc` for the report Worker). The next push to `main` creates it again.
 
 ## Related
 
