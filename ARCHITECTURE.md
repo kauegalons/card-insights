@@ -1,25 +1,12 @@
 # Architecture (v1)
 
-```mermaid
-flowchart LR
-    file["Statement CSV"] --> adapter
-    subgraph browser["Browser (everything runs here)"]
-        subgraph ui["ui/ (Preact)"]
-            pages["Pages: Dashboard, Transactions,<br/>Savings, Import, Settings"]
-        end
-        subgraph pure["Pure TypeScript (no DOM)"]
-            adapter["import/adapters"] --> dedupe["import/dedupe"]
-            dedupe --> categorize["categorize/rules"]
-            analysis["analysis/"]
-            domain["domain/ (money, types)"]
-        end
-        storage["storage/ (IndexedDB repositories)"]
-        pages --> adapter
-        categorize --> storage
-        storage --> analysis --> pages
-    end
-    host["Cloudflare Workers<br/>Static Assets"] -- "static files" --> browser
-```
+<p align="center"><img src="docs/assets/hld-light.png" alt="High-level design: on a laptop or phone, the browser runs the whole app. A statement CSV goes into the Preact UI, the pure TypeScript import and rules core saves transactions to IndexedDB, and the UI reads them back. Your data stays in the browser. Cloudflare Workers Static Assets only serves the static HTML, JS and CSS, one way." width="720"></p>
+
+## Module map
+
+<p align="center"><img src="docs/architecture/v1.png" alt="Module map of v1: Cloudflare Static Assets serves the app to the browser. The statement CSV and the ui go into import/adapters, then import/dedupe, categorize and storage, which reads and writes IndexedDB. storage feeds analysis, which sends insights back to the ui. The pure TypeScript modules sit on domain: money in integer cents, Transaction, Category." width="900"></p>
+
+## Decisions
 
 | Concern | How | Decision |
 |---|---|---|
@@ -37,6 +24,23 @@ flowchart LR
 
 **Limits of this design.** Data is per browser and per device: no sync between phone and laptop except a manual backup file. Browsers can evict IndexedDB under storage pressure (the app asks for persistent storage, but it is not guaranteed), so backups matter. Categorization is only as good as the rules; unknown merchants stay "Uncategorized" until the user fixes one.
 
+## CI and deploy
+
+<p align="center"><img src="docs/architecture/flows/deploy.png" alt="CI and deploy: a pull request or a merge to main runs the test and privacy-guard jobs in GitHub Actions. On a PR the app and the test report are uploaded as a pr-N preview on Cloudflare; on main, after both jobs pass, the deploy job publishes the live app to Workers Static Assets." width="760"></p>
+
+See [ADR 004](docs/adr/004-cloudflare-workers-static-assets-hosting.md) and [docs/setup.md](docs/setup.md).
+
+## Diagrams
+
+The images are drawn by [`docs/architecture/draw.py`](docs/architecture/draw.py), which writes each as SVG and renders it to PNG at 2x with headless Chrome or Edge. It needs only Python 3.10+ and one of those browsers (set `CHROME=/path/to/browser` if it is not found). After changing it, regenerate and commit the SVG and PNG files:
+
+```sh
+python docs/architecture/draw.py             # SVG + PNG
+python docs/architecture/draw.py --svg-only  # SVG only, no browser needed
+```
+
+The style and the approach (a Python generator, committed SVG and PNG) come from [YudiG12/second-brain-mcp](https://github.com/YudiG12/second-brain-mcp) (MIT). Line icons are [Lucide](https://lucide.dev) (ISC); the Cloudflare, Workers and GitHub marks in `brands.json` are [Simple Icons](https://simpleicons.org) (CC0). The diagrams contain no real data.
+
 ## Repository
 
 ```
@@ -49,6 +53,6 @@ src/
   ui/            pages/, components/, theme/
 test/
   fixtures/      FICTITIOUS statements only
-docs/            PRD, spec, ADRs, plan
+docs/            PRD, spec, ADRs, plan, architecture diagrams (draw.py)
 .claude/agents/  developer, test-writer, code-reviewer
 ```

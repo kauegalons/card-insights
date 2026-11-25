@@ -231,7 +231,7 @@ if __name__ == "__main__":
         doc = build()
         w, h = map(int, re.search(r'viewBox="0 0 (\d+) (\d+)"', doc).groups())
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(doc, encoding="utf-8")
+        path.write_text(doc, encoding="utf-8", newline="\n")
         print(path.relative_to(ROOT).as_posix(), end="")
         if "--svg-only" not in sys.argv:
             print(" +", render(path, w, h).relative_to(ROOT).as_posix(), end="")
