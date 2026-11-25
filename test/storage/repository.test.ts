@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../../src/storage/db';
+import { nubankCardCsv } from '../../src/import/adapters/nubank-card-csv';
+import { dedupe } from '../../src/import/dedupe';
 import { commitImport, createRepository } from '../../src/storage/repository';
 import { ensureDeviceId, getSetting } from '../../src/storage/settings';
 import { dismissed, fakeClock, importRecord, stamped, transaction } from './helpers';
@@ -176,7 +178,7 @@ describe('commitImport', () => {
     const db = await open();
     const { clock } = fakeClock('2026-11-24T10:00:00.000Z');
 
-    await commitImport(db, importRecord('import-1'), [transaction('t1'), transaction('t2')], clock);
+    await commitImport(db, { record: importRecord('import-1'), transactions: [transaction('t1'), transaction('t2')] }, clock);
 
     const stamp = stamped('2026-11-24T10:00:00.000Z');
     expect(await createRepository(db, 'imports').list()).toEqual([{ ...importRecord('import-1'), ...stamp }]);
@@ -192,11 +194,41 @@ describe('commitImport', () => {
     const db = await open();
     const broken = { ...transaction('t2'), id: undefined } as unknown as ReturnType<typeof transaction>;
 
-    await expect(commitImport(db, importRecord('import-1'), [transaction('t1'), broken])).rejects.toThrow();
+    await expect(commitImport(db, { record: importRecord('import-1'), transactions: [transaction('t1'), broken] })).rejects.toThrow();
 
     expect(await db.count('transactions')).toBe(0);
     expect(await db.count('imports')).toBe(0);
     expect(await getSetting(db, 'lastStampAt')).toBeUndefined();
+    db.close();
+  });
+
+  it('a partial export then the closed statement leaves one statement (spec v1 §4)', async () => {
+    const db = await open();
+    const { clock } = fakeClock('2026-11-24T10:00:00.000Z');
+    const transactions = createRepository(db, 'transactions');
+    const header = 'date,title,amount\n';
+    const partialText = `${header}2026-10-15,Mercado Exemplo,"123,45"\n2026-10-20,Cafe Exemplo,"12,00"\n`;
+    const closedText = `${partialText}2026-11-02,Posto Exemplo,"200,00"\n`;
+
+    const importFile = async (importId: string, fileName: string, text: string) => {
+      const rows = nubankCardCsv.parse(text, { fileName });
+      const result = dedupe(rows, await transactions.list());
+      const statementId = rows[0]?.statementId ?? '';
+      await commitImport(db, {
+        record: { ...importRecord(importId), fileName, statementId, summary: result.summary },
+        transactions: result.toAdd.map((r, i) => ({ ...r, id: `${importId}-${i}`, importId })),
+        moveToStatement: result.moveToStatement,
+      }, clock);
+    };
+
+    await importFile('partial', 'fatura.csv', partialText);
+    expect(new Set((await transactions.list()).map((t) => t.statementId))).toEqual(new Set(['2026-10-20']));
+
+    await importFile('closed', 'Nubank_2026-11-11 (1).csv', closedText);
+    const all = await transactions.list();
+    expect(all).toHaveLength(3);
+    expect(new Set(all.map((t) => t.statementId))).toEqual(new Set(['2026-11-11']));
+    expect(all.find((t) => t.id === 'partial-0')).toMatchObject({ importId: 'partial', ...stamped('2026-11-24T10:00:00.001Z') });
     db.close();
   });
 });
