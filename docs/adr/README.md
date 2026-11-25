@@ -11,3 +11,4 @@ Each ADR records one decision: context, decision, alternatives, consequences and
 | [005](005-money-in-integer-cents.md) | Money in integer cents | Accepted |
 | [006](006-dedupe-by-fingerprint-and-occurrence-count.md) | Dedupe by fingerprint and occurrence count | Accepted |
 | [007](007-editable-rules-for-categorization-without-ai.md) | Categorization by editable rules, without AI | Accepted |
+| [008](008-data-durability-local-first-sync-ready.md) | Data durability: local first (persistent storage, PWA, automatic backup), storage ready for a later sync | Accepted |
