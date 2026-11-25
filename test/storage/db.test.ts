@@ -17,7 +17,7 @@ describe('openDatabase', () => {
 
   it('indexes transactions by statementId, fingerprint, date and updatedAt, and every synced store by updatedAt', async () => {
     const db = await openDatabase();
-    const tx = db.transaction(db.objectStoreNames, 'readonly');
+    const tx = db.transaction([...db.objectStoreNames], 'readonly');
     expect([...tx.objectStore('transactions').indexNames].sort()).toEqual(['date', 'fingerprint', 'statementId', 'updatedAt']);
     for (const store of ['imports', 'rules', 'categories', 'dismissed'] as const) {
       expect([...tx.objectStore(store).indexNames]).toEqual(['updatedAt']);
