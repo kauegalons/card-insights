@@ -4,18 +4,11 @@
 
 **A private spending dashboard for your credit card statement.** Drop the CSV your bank exports, and the app categorizes every purchase, shows where the money went, compares it with a 50/30/20 budget and points out where you could save. Everything runs in your browser: your statements never leave your device.
 
+<p align="center"><img src="docs/assets/hld-light.png" alt="High-level design: on a laptop or phone, the browser runs the whole app. A statement CSV goes into the Preact UI, the pure TypeScript import and rules core saves transactions to IndexedDB, and the UI reads them back. Your data stays in the browser. Cloudflare Workers Static Assets only serves the static HTML, JS and CSS, one way." width="720"></p>
+
 v1 reads the **Nubank credit card CSV** (`date,title,amount`). Other banks plug in as import adapters.
 
 > **Status:** planning. The design is in [PRD v1](docs/prd/v1.md) and [spec v1](docs/spec/v1.md); the build plan, one PR per task, is in [docs/plan.md](docs/plan.md).
-
-```mermaid
-flowchart LR
-    csv["Statement CSV<br/>(from your bank app)"] --> app
-    subgraph device["Your device"]
-        app["card-insights<br/>(static web app)"] <--> db[("IndexedDB")]
-    end
-    host["Static host<br/>(Cloudflare)"] -- "HTML, JS, CSS only" --> app
-```
 
 ## How to use
 
