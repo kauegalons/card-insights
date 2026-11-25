@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- **CI hardening**: Cloudflare secrets are scoped to the steps that run Wrangler, never to `npm ci`, the build or the tests. PR code runs in the `test` job with a read-only token; a separate `report` job holds `pull-requests: write`, runs the base branch's `scripts/test-report.ts` on the `test` job's artifact and only updates a test report comment written by `github-actions[bot]`. PRs are tested at their head commit, so the report's line links match. The `deploy` job reuses the `test` job's Vitest UI report instead of running the tests a second time after the app is live.
+
 ### Added
 - **Deploy** (T03): `wrangler.jsonc` serves `dist/` with Cloudflare Workers Static Assets (SPA fallback to `index.html`, no Worker script). A `deploy` job in CI runs on every push to `main` after `test` and `privacy-guard`, one at a time, and deploys both the app and the Vitest UI report, so the first merge creates both Workers. Every PR commit uploads an app preview (`pr-<N>` alias) and the Vitest UI report (a separate `card-insights-tests` Worker, `reports.wrangler.jsonc`); the sticky test report comment, now rendered by `scripts/test-report.ts`, links both and keeps a per-commit history. `scripts/preview-urls.ts` reads the preview URLs from Wrangler's output, so no `workers.dev` subdomain is hardcoded. [docs/setup.md](docs/setup.md) explains how to deploy your own.
 - **CI** (T02): `.github/workflows/ci.yml` runs `npm ci`, `typecheck`, `test` and `build` on every PR and on push to `main` (Node from `.nvmrc`), and keeps one sticky test report comment on the PR. A `privacy-guard` job runs `scripts/check-data-files.ts` on `git ls-files` and fails if any `.csv`, `.ofx` or `.pdf` (any case) is tracked outside `test/fixtures/`.

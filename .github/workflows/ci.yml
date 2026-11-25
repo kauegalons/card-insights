@@ -20,11 +20,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write # the sticky test report comment
+      contents: read # PR code runs here: no write token, secrets only in the upload steps
     timeout-minutes: 10
+    outputs:
+      app_url: ${{ steps.app.outputs.alias_url }}
+      app_version_url: ${{ steps.app.outputs.version_url }}
+      ui_url: ${{ steps.ui.outputs.alias_url }}
+      ui_version_url: ${{ steps.ui.outputs.version_url }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # the PR head, not the merge commit, so the report's #L links match the code at that commit
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
@@ -33,6 +41,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test # in CI also writes reports/tests.json and reports/html (vite.config.ts)
       - run: npm run build
+      - name: Keep the test reports
+        if: always() && hashFiles('reports/tests.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 7
       # Previews are public URLs. The app holds no data (it all stays in the visitor's browser), and the
       # test report holds only test code and fictitious fixtures. Fork PRs get no secrets, so both are skipped there.
       - name: Upload the app preview
@@ -59,23 +74,60 @@ jobs:
           set -o pipefail
           npx wrangler versions upload -c reports.wrangler.jsonc --preview-alias "pr-$PR" 2>&1 | tee upload.log
           node scripts/preview-urls.ts < upload.log >> "$GITHUB_OUTPUT"
+
+  # Holds the only write token. It runs the base branch's report script, never the PR's code.
+  report:
+    needs: test
+    if: always() && github.event_name == 'pull_request' && needs.test.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # the sticky test report comment
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        id: reports
+        continue-on-error: true # no artifact when the job failed before the tests ran
+        with:
+          name: test-reports
+          path: reports/
+      - name: Find the previous test report comment
+        id: previous
+        if: steps.reports.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- test-report -->"))) | .id' | tail -1)
+          if [ -n "$id" ]; then gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body > previous.md; else : > previous.md; fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Render the test report
+        if: steps.reports.outcome == 'success'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          APP_URL: ${{ needs.test.outputs.app_url }}
+          APP_VERSION_URL: ${{ needs.test.outputs.app_version_url }}
+          UI_URL: ${{ needs.test.outputs.ui_url }}
+          UI_VERSION_URL: ${{ needs.test.outputs.ui_version_url }}
+        run: PREVIOUS=previous.md node scripts/test-report.ts reports/tests.json > report.md
       - name: Post the test report on the PR
-        if: always() && github.event_name == 'pull_request' && hashFiles('reports/tests.json') != ''
+        if: steps.reports.outcome == 'success'
         continue-on-error: true # fork PRs get a read-only token
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          APP_URL: ${{ steps.app.outputs.alias_url }}
-          APP_VERSION_URL: ${{ steps.app.outputs.version_url }}
-          UI_URL: ${{ steps.ui.outputs.alias_url }}
-          UI_VERSION_URL: ${{ steps.ui.outputs.version_url }}
+          ID: ${{ steps.previous.outputs.id }}
         run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- test-report -->")) | .id' | tail -1)
-          if [ -n "$id" ]; then gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body > previous.md; else : > previous.md; fi
-          PREVIOUS=previous.md node scripts/test-report.ts reports/tests.json > report.md
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md >/dev/null
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$ID" -F body=@report.md >/dev/null
           else
             gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file report.md
           fi
@@ -85,6 +137,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
@@ -99,22 +153,33 @@ jobs:
     concurrency:
       group: deploy
       cancel-in-progress: false
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Check the deploy secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::Set the CLOUDFLARE_API_TOKEN repository secret to deploy (docs/setup.md)."; exit 1; }
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "::error::Set the CLOUDFLARE_ACCOUNT_ID repository secret to deploy (docs/setup.md)."; exit 1; }
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx wrangler deploy
-      # the test report Worker too, so the first push to main creates both Workers the PR previews upload to
-      - run: npm test
-      - run: npx wrangler deploy -c reports.wrangler.jsonc
+      # the test job's own Vitest UI report for this commit: no second test run that could disagree with it
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-reports
+          path: reports/
+      # the report Worker too, so the first push to main creates both Workers the PR previews upload to
+      - name: Deploy the app and the Vitest UI report
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy
+          npx wrangler deploy -c reports.wrangler.jsonc
