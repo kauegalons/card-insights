@@ -105,9 +105,15 @@ describe('dedupe', () => {
 
   it('does not bring back an occurrence the user dismissed', () => {
     const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
-    const dismissed = [{ fingerprint: fingerprint(coffee), count: 1 }];
+    const dismissed = [{ fingerprint: fingerprint(coffee) }];
     expect(dedupe([coffee], [], dismissed).summary).toEqual({ added: 0, existing: 1, review: 0 });
     expect(dedupe([coffee, coffee, coffee], store([coffee]), dismissed).summary).toEqual({ added: 1, existing: 2, review: 0 });
+  });
+
+  it('counts one dismissed occurrence per dismissed record of the fingerprint', () => {
+    const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
+    const dismissed = [{ fingerprint: fingerprint(coffee) }, { fingerprint: fingerprint(coffee) }];
+    expect(dedupe([coffee, coffee, coffee], [], dismissed).summary).toEqual({ added: 1, existing: 2, review: 0 });
   });
 
   it('flags a row with a new merchant but the same date and amount as a stored row as review', () => {

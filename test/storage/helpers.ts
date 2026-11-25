@@ -59,8 +59,12 @@ export const rule = (id: string): Rule => ({
   origin: 'user',
 });
 
-export const dismissed = (fingerprint: string): DismissedRecord => ({
+/** One dismissed occurrence of `fingerprint`. */
+export const dismissed = (id: string, fingerprint: string): DismissedRecord => ({
+  id,
   fingerprint,
-  count: 1,
   dismissedAt: '2026-11-24T10:00:00.000Z',
 });
+
+/** The sync fields a write by `device-1` stamps (ADR 009). */
+export const stamped = (updatedAt: string) => ({ updatedAt, updatedBy: 'device-1' });
