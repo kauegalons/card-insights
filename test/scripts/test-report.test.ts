@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderTestReport, type VitestJsonReport } from '../../scripts/test-report';
+import { COMMENT_BUDGET, renderTestReport, type VitestJsonReport } from '../../scripts/test-report';
 
 const CWD = '/work/card-insights';
 const SHA = 'abc1234def5678900000000000000000000000ff';
@@ -123,5 +123,102 @@ describe('renderTestReport', () => {
     }
     const rows = previous.split('\n').filter((line) => line.startsWith('| [`'));
     expect(rows).toHaveLength(30);
+  });
+
+  it('counts todo tests in the header so it adds up to the total', () => {
+    const md = renderTestReport(
+      report({
+        testResults: [
+          {
+            name: `${CWD}/test/money.test.ts`,
+            assertionResults: [
+              { fullName: 'a', status: 'passed' },
+              { fullName: 'b', status: 'todo' },
+              { fullName: 'c', status: 'skipped' },
+            ],
+          },
+        ],
+      }),
+      base,
+    );
+    expect(md).toContain('### Tests: ✅ all green · 1 passed · 1 skipped · 1 todo');
+    expect(md).toContain('All 3 tests');
+  });
+});
+
+describe('renderTestReport escaping', () => {
+  const named = (fullName: string, failureMessages?: string[]): VitestJsonReport => ({
+    success: !failureMessages,
+    testResults: [
+      {
+        name: `${CWD}/test/x.test.ts`,
+        assertionResults: [
+          { fullName, status: failureMessages ? 'failed' : 'passed', ...(failureMessages && { failureMessages }) },
+        ],
+      },
+    ],
+  });
+
+  it('collapses whitespace and newlines in a test name to one line', () => {
+    const md = renderTestReport(named('reads\n\n| `abc` |  a   b'), { cwd: CWD });
+    expect(md).toContain(String.raw`- ✅ reads \| \`abc\` \| a b`);
+  });
+
+  it('escapes link and HTML characters in a test name', () => {
+    const md = renderTestReport(named('a [b](c) <d>'), { cwd: CWD });
+    expect(md).toContain(String.raw`- ✅ a \[b\]\(c\) \<d\>`);
+  });
+
+  it('strips HTML comment markers so a test name cannot fake the history block', () => {
+    const md = renderTestReport(named('x <!-- history --> y <!-- /history -->'), { cwd: CWD });
+    expect(md.match(/<!-- history -->/g)).toHaveLength(1);
+    expect(md.match(/<!-- \/history -->/g)).toHaveLength(1);
+    const again = renderTestReport(report(), { ...base, previous: md });
+    expect(again.split('\n').filter((line) => line.startsWith('| [`') || line.startsWith('| `'))).toHaveLength(2);
+  });
+
+  it('keeps an error on one line, without comment markers, with pipes escaped', () => {
+    const md = renderTestReport(named('t', ['Error: a | b <!-- c -->\n    at x']), { cwd: CWD });
+    expect(md).toContain('| ❌ | t | `Error: a ' + String.raw`\|` + ' b c` |');
+  });
+});
+
+describe('renderTestReport size budget', () => {
+  const many = (count: number, failEvery: number): VitestJsonReport => ({
+    success: false,
+    testResults: Array.from({ length: count / 10 }, (_, f) => ({
+      name: `${CWD}/test/area-${f}/some-long-module-name-${f}.test.ts`,
+      assertionResults: Array.from({ length: 10 }, (_, t) => {
+        const i = f * 10 + t;
+        const failed = i % failEvery === 0;
+        return {
+          fullName: `module ${f} behaves correctly when the input is case number ${i} of a long synthetic series`,
+          status: failed ? 'failed' : 'passed',
+          location: { line: t * 10 + 1, column: 3 },
+          ...(failed && { failureMessages: [`AssertionError: expected ${i} to equal ${i + 1}`] }),
+        };
+      }),
+    })),
+  });
+
+  it('stays under the comment budget with 1000 tests and keeps every failure', () => {
+    const md = renderTestReport(many(1000, 97), base);
+    expect(md.length).toBeLessThanOrEqual(COMMENT_BUDGET);
+    expect(COMMENT_BUDGET).toBeLessThan(65536);
+    for (const i of [0, 97, 194, 970]) expect(md).toContain(`case number ${i} of`);
+    expect(md).toContain('All 1000 tests');
+    expect(md).toContain('<!-- history -->');
+  });
+
+  it('stays under the budget when 1000 tests all fail, keeping as many failures as fit', () => {
+    const md = renderTestReport(many(1000, 1), base);
+    expect(md.length).toBeLessThanOrEqual(COMMENT_BUDGET);
+    expect(md).toContain('case number 0 of');
+    expect(md).toContain('more failed tests');
+    expect(md).toContain('<!-- /history -->');
+  });
+
+  it('keeps the full linked list when it fits', () => {
+    expect(renderTestReport(report(), base)).not.toContain('shortened');
   });
 });
