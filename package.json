@@ -17,12 +17,14 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "idb": "^8.0.4",
     "preact": "^11.2.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@testing-library/preact": "^3.2.6",
     "@vitest/ui": "^5.1.0",
+    "fake-indexeddb": "^6.2.8",
     "happy-dom": "^21.0.4",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
