@@ -28,7 +28,7 @@ Both previews are linked from the sticky test report comment on the PR, with one
    gh secret set CLOUDFLARE_API_TOKEN
    gh secret set CLOUDFLARE_ACCOUNT_ID
    ```
-5. **Merge to `main`.** Every push to `main` runs the `deploy` job: it builds and deploys the app (`npx wrangler deploy`), then runs the tests and deploys the Vitest UI report (`npx wrangler deploy -c reports.wrangler.jsonc`). The first run creates both Workers and prints the app URL, `https://card-insights.<your-subdomain>.workers.dev`. To use other Worker names, change `name` in `wrangler.jsonc` and `reports.wrangler.jsonc` first.
+5. **Merge to `main`.** Every push to `main` runs the `deploy` job: after `test` passes, it builds and deploys the app (`npx wrangler deploy`), then deploys the Vitest UI report that the `test` job produced for the same commit (`npx wrangler deploy -c reports.wrangler.jsonc`). The first run creates both Workers and prints the app URL, `https://card-insights.<your-subdomain>.workers.dev`. To use other Worker names, change `name` in `wrangler.jsonc` and `reports.wrangler.jsonc` first.
 6. **Then every PR commit uploads its previews.** `wrangler versions upload` refuses a Worker that does not exist yet, so PRs opened before the first deploy to `main` show only the test results; re-run their job after it.
 
 ## Previews
