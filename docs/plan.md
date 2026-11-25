@@ -137,8 +137,10 @@ Documentação base, no formato da referência.
 ### T07 · `feat/storage-indexeddb`
 - Biblioteca `idb`. Stores: `transactions`, `imports`, `rules`, `categories`, `settings`, `dismissed`.
 - Versão de esquema com migrações.
-- Backup: exportar e importar tudo em JSON; apagar todos os dados.
-- **Aceite:** testes com `fake-indexeddb`; um backup restaurado é idêntico ao original.
+- Backup: exportar e importar tudo em JSON (todas as stores, `dismissed` incluída); apagar todos os dados.
+- **Pronto para sync** ([ADR 008](adr/008-data-durability-local-first-sync-ready.md)): repositórios com `get`, `list`, `put`, `remove`, `changedSince`; todo registro com `id` UUID, `updatedAt` e `deletedAt?` (exclusão vira tombstone); `settings.deviceId`.
+- `navigator.storage.persist()` na abertura, com o resultado guardado para a UI.
+- **Aceite:** testes com `fake-indexeddb`; um backup restaurado é idêntico ao original; `remove` gera tombstone que `list` não mostra e `changedSince` mostra.
 
 ## Fase 2: Categorização
 
@@ -211,6 +213,8 @@ Documentação base, no formato da referência.
 
 ### T18 · `feat/ui-settings`
 - Renda, editor de categorias e regras, backup (exportar/importar), apagar tudo, dia de fechamento da fatura.
+- **Backup automático** (ADR 008): no Chrome/Edge desktop, escolher um arquivo uma vez e o app regrava a cada import ou mudança; nos outros navegadores, aviso com download em um toque após cada import e quando o último backup tem mais de 30 dias.
+- Mostra se o armazenamento persistente foi concedido; se não, aviso para instalar o app e ligar o backup.
 
 ### T19 · `feat/demo-mode`
 - Botão "Ver com dados de exemplo": carrega um conjunto fictício e marca a sessão como demo, sem misturar com dados reais.
@@ -220,6 +224,7 @@ Documentação base, no formato da referência.
 
 ### T20 · `feat/pwa-offline`
 - `vite-plugin-pwa`: manifest, ícones, service worker, instalação na tela inicial, funcionamento offline.
+- Convida a instalar depois da primeira importação: no iOS, o app na tela inicial não sofre a exclusão de 7 dias do Safari (ADR 008).
 - **Aceite:** instala no Android/iOS e abre sem internet.
 
 ### T21 · `test/e2e-and-a11y`
@@ -229,6 +234,30 @@ Documentação base, no formato da referência.
 ### T22 · `feat/import-reminder`
 - Com o dia de fechamento configurado, o app avisa ao abrir: "sua fatura fechou, importe o CSV".
 - Mostra a data da última importação.
+
+## Fase 6 (v2): Sync entre aparelhos
+
+Mapeada para não exigir mudança drástica depois: a T07 já nasce com `updatedAt`, tombstones e repositórios ([ADR 008](adr/008-data-durability-local-first-sync-ready.md)). Tudo cabe no plano gratuito da Cloudflare para um usuário. Começa depois da demo da v1.
+
+### T23 · `docs/adr-sync-backend`
+- Novo ADR que substitui o ADR 001: Worker + D1 + Cloudflare Access, criptografia ponta a ponta, last-write-wins por registro.
+- **Aceite:** ADR aceito; spec v2 com o protocolo de sync.
+
+### T24 · `feat/sync-crypto`
+- Chave derivada da senha do usuário (PBKDF2 ou Argon2) e AES-GCM no navegador (Web Crypto). O servidor só vê `id`, `updatedAt`, `deletedAt` e o texto cifrado.
+- **Aceite:** ida e volta cifra/decifra; senha errada falha com erro claro; nenhum campo legível sai do navegador.
+
+### T25 · `feat/sync-api`
+- Worker com `GET /changes?since=` e `POST /changes`, D1 com migrações, atrás do Cloudflare Access.
+- **Aceite:** testes com D1 local; sem login a API responde 401/403.
+
+### T26 · `feat/sync-engine`
+- Envia `changedSince(lastSyncAt)`, recebe as mudanças remotas, aplica last-write-wins por `updatedAt`, propaga tombstones.
+- **Aceite:** dois aparelhos simulados convergem para o mesmo estado, inclusive com exclusões e edições concorrentes.
+
+### T27 · `feat/ui-sync`
+- Ligar o sync, definir a senha (com aviso: perdeu a senha, perdeu a cópia do servidor), status da última sincronização, desligar.
+- **Aceite:** celular e notebook mostram os mesmos meses depois de sincronizar.
 
 ## Depois da v1 (fora de escopo agora)
 
@@ -250,6 +279,8 @@ T00 → T01 → T02 → T03
   T13 → T14 → T15 → T16 → T17 → T18 → T19
                                         ↓
                           T20 → T21 → T22
+                                        ↓
+                    (demo v1) T23 → T24 → T25 → T26 → T27
 ```
 
 T04–T12 são TypeScript puro e testável sem UI, então a T13 (shell da UI) pode começar em paralelo logo depois da T03. A seta T12 → T13 vale só para as páginas que consomem a análise (T16, T17).
