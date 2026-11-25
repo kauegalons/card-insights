@@ -47,8 +47,16 @@ export interface Settings {
   lastSyncAt: string;
   /** The last `updatedAt` this device stamped (ADR 009). */
   lastStampAt: string;
+  /** File System Access handle of the automatic backup file (Chromium desktop, T18). */
+  backupFileHandle: FileSystemFileHandle;
 }
 export type SettingKey = keyof Settings;
+
+/** Settings that belong to this device: never exported, kept as they are on restore. */
+export const DEVICE_LOCAL_SETTINGS = ['deviceId', 'lastStampAt', 'lastSyncAt', 'backupFileHandle'] as const satisfies readonly SettingKey[];
+export type DeviceLocalSettingKey = (typeof DEVICE_LOCAL_SETTINGS)[number];
+export const isDeviceLocalSetting = (key: unknown): key is DeviceLocalSettingKey =>
+  (DEVICE_LOCAL_SETTINGS as readonly unknown[]).includes(key);
 export type SettingRecord = { [K in SettingKey]: { key: K; value: Settings[K] } }[SettingKey];
 
 type SyncedStore<T, Indexes = object> = { key: string; value: Stored<T>; indexes: Indexes & { updatedAt: string } };

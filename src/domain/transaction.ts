@@ -1,5 +1,6 @@
 /** Spec v1 §2. Amounts are integer cents (ADR 005); dates are ISO `YYYY-MM-DD` with no time zone. */
-export type TransactionKind = 'purchase' | 'refund' | 'payment' | 'fee';
+export const TRANSACTION_KINDS = ['purchase', 'refund', 'payment', 'fee'] as const;
+export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
 
 /** From `Parcela n/N`: charge `n` of `total`. */
 export interface Installment {
