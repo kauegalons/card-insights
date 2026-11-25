@@ -9,7 +9,8 @@ const HEADER = 'date,title,amount';
 const INSTALLMENT = /\s+-\s+Parcela (\d+)\/(\d+)$/;
 const ACQUIRER_PREFIX = /^(?:Mlp|Wl|Dl|Htm|Pg) ?\*\s*/i;
 const ACQUIRER_SUFFIX = /\s+I\*Vmt\*Cielo$/i;
-const DATED_FILE_NAME = /^Nubank_(\d{4}-\d{2}-\d{2})\.csv$/;
+// ` (1)` is the suffix browsers add when the same file is downloaded again.
+const DATED_FILE_NAME = /^Nubank_(\d{4}-\d{2}-\d{2})(?: \(\d+\))?\.csv$/;
 
 function kindOf(title: string, amountCents: number): TransactionKind {
   if (title === 'Pagamento recebido') return 'payment';
@@ -20,7 +21,7 @@ function kindOf(title: string, amountCents: number): TransactionKind {
 function splitTitle(title: string): { merchant: string; installment?: Installment } {
   const match = INSTALLMENT.exec(title);
   const base = match ? title.slice(0, match.index) : title;
-  const merchant = base.replace(ACQUIRER_PREFIX, '').replace(ACQUIRER_SUFFIX, '').trim() || base;
+  const merchant = (base.replace(ACQUIRER_PREFIX, '').replace(ACQUIRER_SUFFIX, '').trim() || base).replace(/\s+/g, ' ');
   return match ? { merchant, installment: { n: Number(match[1]), total: Number(match[2]) } } : { merchant };
 }
 
@@ -38,11 +39,13 @@ function nextClosingDate(date: string, closingDay: number): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function statementIdFor(dates: string[], meta: ImportMeta): string {
+function statementIdFor(dates: string[], meta: ImportMeta): Pick<ParsedRow, 'statementId' | 'statementIdFrom'> {
   const named = DATED_FILE_NAME.exec(meta.fileName)?.[1];
-  if (named !== undefined) return parseIsoDate(named);
+  if (named !== undefined) return { statementId: parseIsoDate(named), statementIdFrom: 'fileName' };
   const latest = dates.reduce((a, b) => (b > a ? b : a));
-  return meta.statementClosingDay === undefined ? latest : nextClosingDate(latest, meta.statementClosingDay);
+  return meta.statementClosingDay === undefined
+    ? { statementId: latest, statementIdFrom: 'latestDate' }
+    : { statementId: nextClosingDate(latest, meta.statementClosingDay), statementIdFrom: 'closingDay' };
 }
 
 export const nubankCardCsv: ImportAdapter = {
@@ -69,7 +72,7 @@ export const nubankCardCsv: ImportAdapter = {
       }
     });
     if (rows.length === 0) return [];
-    const statementId = statementIdFor(rows.map((r) => r.date), meta);
-    return rows.map((row): ParsedRow => ({ ...row, statementId }));
+    const statement = statementIdFor(rows.map((r) => r.date), meta);
+    return rows.map((row): ParsedRow => ({ ...row, ...statement }));
   },
 };

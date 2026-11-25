@@ -9,6 +9,11 @@ export interface ParsedRow {
   kind: TransactionKind;
   installment?: Installment;
   statementId: string;
+  /**
+   * Where `statementId` came from: the file name or the closing day mean the statement is known; `latestDate`
+   * is provisional (a partial export), so a later import may move these rows to its statement (spec v1 §4).
+   */
+  statementIdFrom: 'fileName' | 'closingDay' | 'latestDate';
 }
 
 export interface ImportFile {

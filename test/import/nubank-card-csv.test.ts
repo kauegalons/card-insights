@@ -37,7 +37,7 @@ describe('nubankCardCsv.detect', () => {
 describe('nubankCardCsv.parse', () => {
   it('turns the fictitious fixture into the expected rows', () => {
     const s = '2026-11-11';
-    expect(nubankCardCsv.parse(NUBANK, { fileName: 'Nubank_2026-11-11.csv' })).toEqual<ParsedRow[]>([
+    expect(nubankCardCsv.parse(NUBANK, { fileName: 'Nubank_2026-11-11.csv' })).toEqual<ParsedRow[]>((<Omit<ParsedRow, 'statementIdFrom'>[]>[
       { date: '2026-11-09', rawTitle: 'Padaria Exemplo', merchant: 'Padaria Exemplo', amountCents: 1850, kind: 'purchase', statementId: s },
       { date: '2026-11-09', rawTitle: 'Padaria Exemplo', merchant: 'Padaria Exemplo', amountCents: 725, kind: 'purchase', statementId: s },
       { date: '2026-11-05', rawTitle: 'Cafe Exemplo I*Vmt*Cielo', merchant: 'Cafe Exemplo', amountCents: 1200, kind: 'purchase', statementId: s },
@@ -53,7 +53,7 @@ describe('nubankCardCsv.parse', () => {
       { date: '2026-10-18', rawTitle: 'IOF de compra internacional', merchant: 'IOF de compra internacional', amountCents: 312, kind: 'fee', statementId: s },
       { date: '2026-10-15', rawTitle: 'Juros de dívida encerrada', merchant: 'Juros de dívida encerrada', amountCents: 540, kind: 'fee', statementId: s },
       { date: '2026-10-12', rawTitle: 'Pagamento recebido', merchant: 'Pagamento recebido', amountCents: -234567, kind: 'payment', statementId: s },
-    ].map((r) => ({ ...r, statementIdFrom: 'fileName' as const })));
+    ]).map((r) => ({ ...r, statementIdFrom: 'fileName' as const })));
   });
 
   it('parses the same rows from a file with a BOM and CRLF line endings', () => {

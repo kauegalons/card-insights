@@ -62,17 +62,28 @@ export function createRepository<S extends SyncedStoreName>(db: Db, store: S, cl
   };
 }
 
-/** Saves an import's transactions and its record in one IndexedDB transaction (spec v1 §8.1): all or nothing, one stamp. */
-export async function commitImport(
-  db: Db,
-  record: ImportRecord,
-  transactions: readonly Transaction[],
-  clock: Clock = systemClock,
-): Promise<void> {
+export interface ImportCommit {
+  record: ImportRecord;
+  /** The new transactions. */
+  transactions: readonly Transaction[];
+  /** Stored transaction ids to move to `record.statementId` (dedupe's `moveToStatement`, spec v1 §4). */
+  moveToStatement?: readonly string[];
+}
+
+/**
+ * Saves an import in one IndexedDB transaction (spec v1 §8.1), all or nothing, with one stamp: its record, its
+ * new transactions, and the stored ones it moves to its statement (an unknown or deleted id is skipped).
+ */
+export async function commitImport(db: Db, commit: ImportCommit, clock: Clock = systemClock): Promise<void> {
   const tx = db.transaction(['transactions', 'imports', 'settings'], 'readwrite');
+  const transactions = tx.objectStore('transactions');
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
+  const moved = (await Promise.all((commit.moveToStatement ?? []).map((id) => transactions.get(id))))
+    .filter((t): t is NonNullable<typeof t> => t !== undefined && isLive(t))
+    .map((t) => ({ ...t, statementId: commit.record.statementId, ...stamp }));
   await runInTransaction(tx, [
-    () => tx.objectStore('imports').put({ ...withoutSyncFields(record), ...stamp }),
-    ...transactions.map((t) => () => tx.objectStore('transactions').put({ ...withoutSyncFields(t), ...stamp })),
+    () => tx.objectStore('imports').put({ ...withoutSyncFields(commit.record), ...stamp }),
+    ...commit.transactions.map((t) => () => transactions.put({ ...withoutSyncFields(t), ...stamp })),
+    ...moved.map((t) => () => transactions.put(t)),
   ]);
 }

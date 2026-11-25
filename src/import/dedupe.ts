@@ -2,7 +2,7 @@
 import type { Transaction } from '../domain/transaction';
 import type { ParsedRow } from './types';
 
-export type StoredTransaction = Pick<Transaction, 'date' | 'merchant' | 'amountCents' | 'fingerprint'>;
+export type StoredTransaction = Pick<Transaction, 'id' | 'date' | 'merchant' | 'amountCents' | 'fingerprint' | 'statementId'>;
 
 /** One occurrence the user deleted (a live record in the `dismissed` store, T15). */
 export interface DismissedOccurrence {
@@ -27,6 +27,13 @@ export interface DedupedRow extends ParsedRow {
 export interface DedupeResult {
   toAdd: DedupedRow[];
   summary: ImportSummary;
+  /** Ids of the stored transactions the file's rows matched, one per matching row. */
+  matchedIds: string[];
+  /**
+   * Matched ids whose `statementId` should become the file's: set only when the file's statement id comes from
+   * its name or the closing day, for rows stored under another one (e.g. a partial export's provisional id).
+   */
+  moveToStatement: string[];
 }
 
 /** Case-, accent- and spacing-insensitive merchant, so a cosmetic change doesn't create a new fingerprint. */
@@ -59,34 +66,41 @@ export function dedupe(
   const [from, to] = [dates[0], dates[dates.length - 1]];
   const inRange = from === undefined || to === undefined ? [] : stored.filter((t) => t.date >= from && t.date <= to);
 
-  const storedCount = new Map<string, number>();
+  const storedByFingerprint = new Map<string, StoredTransaction[]>();
   const storedMerchantsByDateAmount = new Map<string, Set<string>>();
   for (const t of inRange) {
-    increment(storedCount, t.fingerprint);
+    storedByFingerprint.set(t.fingerprint, [...(storedByFingerprint.get(t.fingerprint) ?? []), t]);
     const key = `${t.date}|${t.amountCents}`;
     const merchants = storedMerchantsByDateAmount.get(key) ?? new Set<string>();
     storedMerchantsByDateAmount.set(key, merchants.add(normalizeMerchant(t.merchant)));
   }
 
-  // Occurrences already accounted for, consumed as matching rows come in.
-  const skip = new Map(storedCount);
-  for (const d of dismissed) increment(skip, d.fingerprint);
+  // Occurrences already accounted for, consumed as matching rows come in: stored rows first, then dismissed.
+  const unmatched = new Map([...storedByFingerprint].map(([fp, list]) => [fp, [...list]]));
+  const dismissedLeft = new Map<string, number>();
+  for (const d of dismissed) increment(dismissedLeft, d.fingerprint);
 
   const toAdd: DedupedRow[] = [];
+  const matched: StoredTransaction[] = [];
   const summary: ImportSummary = { added: 0, existing: 0, review: 0 };
   for (const row of rows) {
     const fp = fingerprint(row);
-    const remaining = skip.get(fp) ?? 0;
-    if (remaining > 0) {
-      skip.set(fp, remaining - 1);
+    const match = unmatched.get(fp)?.shift();
+    const dismissedCount = dismissedLeft.get(fp) ?? 0;
+    if (match !== undefined || dismissedCount > 0) {
+      if (match !== undefined) matched.push(match);
+      else dismissedLeft.set(fp, dismissedCount - 1);
       summary.existing++;
       continue;
     }
     const merchants = storedMerchantsByDateAmount.get(`${row.date}|${row.amountCents}`);
-    const renamed = !storedCount.has(fp) && merchants !== undefined && !merchants.has(normalizeMerchant(row.merchant));
+    const renamed = !storedByFingerprint.has(fp) && merchants !== undefined && !merchants.has(normalizeMerchant(row.merchant));
     const status = renamed ? 'review' : 'ok';
     toAdd.push({ ...row, fingerprint: fp, status });
     summary[renamed ? 'review' : 'added']++;
   }
-  return { toAdd, summary };
+  const file = rows[0];
+  const known = file !== undefined && file.statementIdFrom !== 'latestDate';
+  const moveToStatement = known ? matched.filter((t) => t.statementId !== file.statementId).map((t) => t.id) : [];
+  return { toAdd, summary, matchedIds: matched.map((t) => t.id), moveToStatement };
 }
