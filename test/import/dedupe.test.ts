@@ -13,10 +13,18 @@ const row = (date: string, merchant: string, amountCents: number, installment?: 
   kind: amountCents < 0 ? 'refund' : 'purchase',
   ...(installment ? { installment } : {}),
   statementId: '2026-11-11',
+  statementIdFrom: 'fileName',
 });
 
 const store = (rows: readonly ParsedRow[]): StoredTransaction[] =>
-  rows.map((r) => ({ date: r.date, merchant: r.merchant, amountCents: r.amountCents, fingerprint: fingerprint(r) }));
+  rows.map((r, i) => ({
+    id: `stored-${i}`,
+    date: r.date,
+    merchant: r.merchant,
+    amountCents: r.amountCents,
+    fingerprint: fingerprint(r),
+    statementId: r.statementId,
+  }));
 
 describe('fingerprint', () => {
   it('joins date, merchant, cents and installment, with "-" when there is no installment', () => {
@@ -101,6 +109,34 @@ describe('dedupe', () => {
     const result = dedupe([nine, ten], store([nine]));
     expect(result.summary).toEqual({ added: 1, existing: 1, review: 0 });
     expect(result.toAdd[0]?.installment).toEqual({ n: 10, total: 12 });
+  });
+
+  it('returns the ids of the stored rows the file matched, one per matching row', () => {
+    const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
+    const bakery = row('2026-11-09', 'Padaria Exemplo', 1850);
+    const stored = store([coffee, coffee, bakery]);
+    expect(dedupe([coffee, bakery, row('2026-11-06', 'Posto Exemplo', 9000)], stored).matchedIds).toEqual(['stored-0', 'stored-2']);
+  });
+
+  it('does not count a dismissed occurrence as a matched stored row', () => {
+    const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
+    const result = dedupe([coffee, coffee], store([coffee]), [{ fingerprint: fingerprint(coffee) }]);
+    expect(result.matchedIds).toEqual(['stored-0']);
+    expect(result.summary).toEqual({ added: 0, existing: 2, review: 0 });
+  });
+
+  it('moves matched rows of a provisional statement to the file statement when its id comes from the name or the closing day', () => {
+    const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
+    const partial = store([{ ...coffee, statementId: '2026-11-05', statementIdFrom: 'latestDate' }]);
+    expect(dedupe([coffee], partial).moveToStatement).toEqual(['stored-0']);
+    expect(dedupe([{ ...coffee, statementIdFrom: 'closingDay' }], partial).moveToStatement).toEqual(['stored-0']);
+  });
+
+  it('moves nothing when the file statement id is only its latest date, or already matches', () => {
+    const coffee = row('2026-11-05', 'Cafe Exemplo', 1200);
+    const closed = store([coffee]);
+    expect(dedupe([{ ...coffee, statementId: '2026-11-05', statementIdFrom: 'latestDate' }], closed).moveToStatement).toEqual([]);
+    expect(dedupe([coffee], closed).moveToStatement).toEqual([]);
   });
 
   it('does not bring back an occurrence the user dismissed', () => {

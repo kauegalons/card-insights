@@ -3,8 +3,9 @@
  * with string and integer operations, never `parseFloat`.
  */
 
-// Optional sign, optional spaces after it, digits (plain or grouped by `.` in threes), `,` and exactly two decimals.
-const BRL_AMOUNT = /^([+-]?) *(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})$/;
+// Optional sign, optional whitespace after it (no-break space included), digits (plain or grouped by `.` in
+// threes), `,` and exactly two decimals.
+const BRL_AMOUNT = /^([+-]?)\s*(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})$/;
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -23,6 +24,6 @@ export function formatBrl(cents: number): string {
   if (!Number.isSafeInteger(cents)) throw new Error(`Invalid cents: ${cents} (expected an integer)`);
   const abs = Math.abs(cents);
   // A decimal string keeps Intl exact: no division by 100 in floating point.
-  const decimal = `${cents < 0 ? '-' : ''}${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+  const decimal = `${cents < 0 ? '-' : ''}${(abs - (abs % 100)) / 100}.${String(abs % 100).padStart(2, '0')}`;
   return BRL.format(decimal as `${number}`);
 }

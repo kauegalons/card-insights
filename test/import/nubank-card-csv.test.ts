@@ -37,7 +37,7 @@ describe('nubankCardCsv.detect', () => {
 describe('nubankCardCsv.parse', () => {
   it('turns the fictitious fixture into the expected rows', () => {
     const s = '2026-11-11';
-    expect(nubankCardCsv.parse(NUBANK, { fileName: 'Nubank_2026-11-11.csv' })).toEqual<ParsedRow[]>([
+    expect(nubankCardCsv.parse(NUBANK, { fileName: 'Nubank_2026-11-11.csv' })).toEqual<ParsedRow[]>((<Omit<ParsedRow, 'statementIdFrom'>[]>[
       { date: '2026-11-09', rawTitle: 'Padaria Exemplo', merchant: 'Padaria Exemplo', amountCents: 1850, kind: 'purchase', statementId: s },
       { date: '2026-11-09', rawTitle: 'Padaria Exemplo', merchant: 'Padaria Exemplo', amountCents: 725, kind: 'purchase', statementId: s },
       { date: '2026-11-05', rawTitle: 'Cafe Exemplo I*Vmt*Cielo', merchant: 'Cafe Exemplo', amountCents: 1200, kind: 'purchase', statementId: s },
@@ -53,7 +53,7 @@ describe('nubankCardCsv.parse', () => {
       { date: '2026-10-18', rawTitle: 'IOF de compra internacional', merchant: 'IOF de compra internacional', amountCents: 312, kind: 'fee', statementId: s },
       { date: '2026-10-15', rawTitle: 'Juros de dívida encerrada', merchant: 'Juros de dívida encerrada', amountCents: 540, kind: 'fee', statementId: s },
       { date: '2026-10-12', rawTitle: 'Pagamento recebido', merchant: 'Pagamento recebido', amountCents: -234567, kind: 'payment', statementId: s },
-    ]);
+    ]).map((r) => ({ ...r, statementIdFrom: 'fileName' as const })));
   });
 
   it('parses the same rows from a file with a BOM and CRLF line endings', () => {
@@ -89,12 +89,28 @@ describe('nubankCardCsv.parse', () => {
 
   it('takes the statement id from a Nubank_YYYY-MM-DD.csv file name', () => {
     const [row] = parseRows('2026-10-03,Loja Exemplo,"20,00"', 'Nubank_2026-11-11.csv', 5);
-    expect(row?.statementId).toBe('2026-11-11');
+    expect(row).toMatchObject({ statementId: '2026-11-11', statementIdFrom: 'fileName' });
+  });
+
+  it('accepts the copy suffix browsers add to a downloaded file name', () => {
+    for (const fileName of ['Nubank_2026-11-11 (1).csv', 'Nubank_2026-11-11 (12).csv']) {
+      expect(parseRows('2026-10-03,Loja Exemplo,"20,00"', fileName)[0]).toMatchObject({ statementId: '2026-11-11', statementIdFrom: 'fileName' });
+    }
+    expect(parseRows('2026-10-03,Loja Exemplo,"20,00"', 'Nubank_2026-11-11 copy.csv')[0]?.statementIdFrom).toBe('latestDate');
   });
 
   it('without a dated file name and no closing day, uses the latest row date for every row', () => {
     const rows = parseRows('2026-10-03,Loja Exemplo,"20,00"\n2026-10-21,Padaria Exemplo,"8,00"\n2026-10-09,Posto Exemplo,"90,00"');
-    expect(rows.map((r) => r.statementId)).toEqual(['2026-10-21', '2026-10-21', '2026-10-21']);
+    expect(rows.map((r) => [r.statementId, r.statementIdFrom])).toEqual(Array(3).fill(['2026-10-21', 'latestDate']));
+  });
+
+  it('marks a statement id derived from the closing day', () => {
+    expect(parseRows('2026-10-20,Loja Exemplo,"20,00"', 'fatura.csv', 11)[0]).toMatchObject({ statementId: '2026-11-11', statementIdFrom: 'closingDay' });
+  });
+
+  it('collapses internal whitespace in the merchant, keeping the raw title', () => {
+    const [row] = parseRows('2026-10-03,Padaria   Exemplo\t Centro,"20,00"');
+    expect(row).toMatchObject({ rawTitle: 'Padaria   Exemplo\t Centro', merchant: 'Padaria Exemplo Centro' });
   });
 
   it('with a closing day, uses the first closing date on or after the latest row date', () => {

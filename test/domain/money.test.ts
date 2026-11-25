@@ -20,6 +20,11 @@ describe('parseBrlAmount', () => {
     expect(parseBrlAmount('- 1.234,56')).toBe(-123456);
   });
 
+  it('parses a negative amount with a no-break space or a tab after the sign', () => {
+    expect(parseBrlAmount('-\u00a060,00')).toBe(-6000);
+    expect(parseBrlAmount('-\t60,00')).toBe(-6000);
+  });
+
   it('parses a negative amount without a space after the sign', () => {
     expect(parseBrlAmount('-49,90')).toBe(-4990);
   });
