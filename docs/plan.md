@@ -139,7 +139,7 @@ Documentação base, no formato da referência.
 - Versão de esquema com migrações.
 - Backup: exportar e importar tudo em JSON (todas as stores, `dismissed` incluída); apagar todos os dados.
 - **Pronto para sync** ([ADR 008](adr/008-data-durability-local-first-sync-ready.md)): repositórios com `get`, `list`, `put`, `remove`, `changedSince`; todo registro com `id` UUID, `updatedAt` e `deletedAt?` (exclusão vira tombstone); `settings.deviceId`.
-- `navigator.storage.persist()` na abertura, com o resultado guardado para a UI.
+- `requestPersistentStorage()` (`navigator.storage.persist()`) pronto e testado. Chamar na abertura do app e guardar o resultado ficou para a T13 (abertura) e a T18 (exibição).
 - **Aceite:** testes com `fake-indexeddb`; um backup restaurado é idêntico ao original; `remove` gera tombstone que `list` não mostra e `changedSince` mostra.
 
 ## Fase 2: Categorização
@@ -191,7 +191,8 @@ Documentação base, no formato da referência.
 - Rotas (`preact-iso`): Painel, Transações, Economia, Importar, Configurações.
 - Navegação inferior no celular e lateral no desktop.
 - Tema claro e escuro com tokens de design; foco visível; contraste AA.
-- **Aceite:** navegação inteira por teclado; Lighthouse Acessibilidade ≥ 95.
+- Na abertura: `openDatabase` (com `onBlocked`: aviso para fechar a outra aba do app) e `requestPersistentStorage()`, com o resultado guardado em memória para a T18 mostrar (vem da T07).
+- **Aceite:** navegação inteira por teclado; Lighthouse Acessibilidade ≥ 95; o pedido de armazenamento persistente acontece uma vez por abertura.
 
 ### T14 · `feat/ui-import`
 - Arrastar e soltar ou escolher o arquivo; prévia das linhas.
@@ -201,7 +202,7 @@ Documentação base, no formato da referência.
 ### T15 · `feat/ui-transactions`
 - Lista com filtros (fatura, categoria, texto), edição da categoria (dispara a T09).
 - **Excluir transação** (ex.: compra cancelada que sumiu do CSV), com confirmação e opção de desfazer logo em seguida. A exclusão vale também para itens em revisão.
-- **Aceite:** listas longas continuam fluidas no celular; uma transação excluída some dos totais e não volta ao reimportar o mesmo arquivo (a exclusão grava a impressão digital no store `dismissed`, que a dedupe da T06 desconta).
+- **Aceite:** listas longas continuam fluidas no celular; uma transação excluída some dos totais e não volta ao reimportar o mesmo arquivo (a exclusão grava um registro por ocorrência no store `dismissed`, com a impressão digital, que a dedupe da T06 desconta; [ADR 009](adr/009-sync-clock-and-record-identity.md)).
 
 ### T16 · `feat/ui-dashboard`
 - Gráfico de barras por categoria, tendência mensal, cartões de resumo e parcelas futuras.
@@ -214,7 +215,7 @@ Documentação base, no formato da referência.
 ### T18 · `feat/ui-settings`
 - Renda, editor de categorias e regras, backup (exportar/importar), apagar tudo, dia de fechamento da fatura.
 - **Backup automático** (ADR 008): no Chrome/Edge desktop, escolher um arquivo uma vez e o app regrava a cada import ou mudança; nos outros navegadores, aviso com download em um toque após cada import e quando o último backup tem mais de 30 dias.
-- Mostra se o armazenamento persistente foi concedido; se não, aviso para instalar o app e ligar o backup.
+- Mostra se o armazenamento persistente foi concedido (o resultado guardado na abertura, T13); se não, aviso para instalar o app e ligar o backup.
 
 ### T19 · `feat/demo-mode`
 - Botão "Ver com dados de exemplo": carrega um conjunto fictício e marca a sessão como demo, sem misturar com dados reais.
@@ -240,11 +241,14 @@ Documentação base, no formato da referência.
 Mapeada para não exigir mudança drástica depois: a T07 já nasce com `updatedAt`, tombstones e repositórios ([ADR 008](adr/008-data-durability-local-first-sync-ready.md)). Tudo cabe no plano gratuito da Cloudflare para um usuário. Começa depois da demo da v1.
 
 ### T23 · `docs/adr-sync-backend`
-- Novo ADR que substitui o ADR 001: Worker + D1 + Cloudflare Access, criptografia ponta a ponta, last-write-wins por registro.
-- **Aceite:** ADR aceito; spec v2 com o protocolo de sync.
+- Novo ADR que substitui o ADR 001: Worker + D1 + Cloudflare Access, criptografia ponta a ponta, last-write-wins por registro (relógio e identidade dos registros já definidos no [ADR 009](adr/009-sync-clock-and-record-identity.md)).
+- Pontos em aberto que o ADR precisa fechar:
+  - **Settings locais x sincronizadas.** Hoje `settings` é só do aparelho. Separar: `statementClosingDay` e `monthlyIncomeCents` (e o que mais for preferência do usuário) passam a ser registros sincronizados, com `id`, `updatedAt`, `updatedBy` e `deletedAt?`; `deviceId`, `lastStampAt`, `lastSyncAt` e `backupFileHandle` continuam só do aparelho (o backup já os deixa de fora).
+  - **Apagar tudo e restaurar x servidor.** `deleteAllData` e `restoreBackup` limpam as stores de verdade, sem tombstones; no próximo sync o servidor devolveria tudo. Definir uma regra de época (*epoch*/*wipe*): por exemplo, um contador de época da conta, incrementado ao apagar tudo ou restaurar, que o servidor guarda; mudanças de uma época anterior são descartadas, e um aparelho numa época antiga recomeça do zero em vez de reenviar o que tem.
+- **Aceite:** ADR aceito; spec v2 com o protocolo de sync, incluindo os dois pontos acima.
 
 ### T24 · `feat/sync-crypto`
-- Chave derivada da senha do usuário (PBKDF2 ou Argon2) e AES-GCM no navegador (Web Crypto). O servidor só vê `id`, `updatedAt`, `deletedAt` e o texto cifrado.
+- Chave derivada da senha do usuário (PBKDF2 ou Argon2) e AES-GCM no navegador (Web Crypto). O servidor só vê `id`, `updatedAt`, `updatedBy`, `deletedAt` e o texto cifrado.
 - **Aceite:** ida e volta cifra/decifra; senha errada falha com erro claro; nenhum campo legível sai do navegador.
 
 ### T25 · `feat/sync-api`
@@ -252,7 +256,7 @@ Mapeada para não exigir mudança drástica depois: a T07 já nasce com `updated
 - **Aceite:** testes com D1 local; sem login a API responde 401/403.
 
 ### T26 · `feat/sync-engine`
-- Envia `changedSince(lastSyncAt)`, recebe as mudanças remotas, aplica last-write-wins por `updatedAt`, propaga tombstones.
+- Envia `changedSince(cursor)`, onde o cursor é o maior `updatedAt` já enviado (nunca o relógio de parede), recebe as mudanças remotas, aplica last-write-wins por `(updatedAt, updatedBy)`, propaga tombstones e sobe `lastStampAt` até o `updatedAt` remoto mais novo ([ADR 009](adr/009-sync-clock-and-record-identity.md)).
 - **Aceite:** dois aparelhos simulados convergem para o mesmo estado, inclusive com exclusões e edições concorrentes.
 
 ### T27 · `feat/ui-sync`
