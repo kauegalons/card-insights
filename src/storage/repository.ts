@@ -1,19 +1,20 @@
-/** Sync-ready repositories (spec v1 §7, ADR 008): every write stamps `updatedAt`; deletes are tombstones. */
+/** Sync-ready repositories (spec v1 §7, ADR 008, ADR 009): every write is stamped; deletes are tombstones. */
 import type { StoreValue } from 'idb';
 import type { Transaction } from '../domain/transaction';
-import { runInTransaction, systemClock, type Clock, type Db, type ImportRecord, type Schema, type Stored, type SyncedStoreName } from './db';
+import { runInTransaction, systemClock, type Clock, type Db, type ImportRecord, type Schema, type SyncFields, type SyncedStoreName } from './db';
+import { nextStamp } from './stamp';
 
 /** A synced store's record without its sync fields: what callers write. */
-export type RecordOf<S extends SyncedStoreName> = Omit<StoreValue<Schema, S>, 'updatedAt' | 'deletedAt'>;
+export type RecordOf<S extends SyncedStoreName> = Omit<StoreValue<Schema, S>, keyof SyncFields>;
 
 export interface Repository<S extends SyncedStoreName> {
   /** The live record, or undefined if missing or deleted. */
   get(key: string): Promise<StoreValue<Schema, S> | undefined>;
   /** Live records in key order. */
   list(): Promise<StoreValue<Schema, S>[]>;
-  /** Writes the record live (any `deletedAt` is dropped) with `updatedAt` = now. */
+  /** Writes the record live (any `deletedAt` is dropped), stamping `updatedAt` and `updatedBy`. */
   put(record: RecordOf<S>): Promise<StoreValue<Schema, S>>;
-  /** Soft delete: sets `deletedAt` and `updatedAt` to now. Throws if the key is unknown. */
+  /** Soft delete: stamps and sets `deletedAt`. Throws if the key is unknown; a tombstone is left as it is. */
   remove(key: string): Promise<void>;
   /** Records written strictly after `timestamp`, tombstones included, in `updatedAt` order. */
   changedSince(timestamp: string): Promise<StoreValue<Schema, S>[]>;
@@ -21,10 +22,10 @@ export interface Repository<S extends SyncedStoreName> {
 
 const isLive = (record: { deletedAt?: string }): boolean => record.deletedAt === undefined;
 
-/** `record` stamped with `updatedAt`, live. */
-function stamp<T extends object>(record: T, now: Date): Stored<Omit<T, 'deletedAt'>> {
-  const { deletedAt: _dropped, ...rest } = record as T & { deletedAt?: string };
-  return { ...rest, updatedAt: now.toISOString() } as Stored<Omit<T, 'deletedAt'>>;
+/** `record` without any sync fields passed in, so the stamp always comes from the repository. */
+function withoutSyncFields<T extends object>(record: T): Omit<T, keyof SyncFields> {
+  const { updatedAt: _a, updatedBy: _b, deletedAt: _c, ...rest } = record as T & Partial<SyncFields>;
+  return rest;
 }
 
 export function createRepository<S extends SyncedStoreName>(db: Db, store: S, clock: Clock = systemClock): Repository<S> {
@@ -41,15 +42,19 @@ export function createRepository<S extends SyncedStoreName>(db: Db, store: S, cl
       return ((await db.getAll(store)) as Value[]).filter(isLive);
     },
     async put(record) {
-      const stored = stamp(record, clock()) as Value;
-      await db.put(store, stored as never);
+      const tx = db.transaction([store, 'settings'], 'readwrite');
+      const stored = { ...withoutSyncFields(record), ...(await nextStamp(tx.objectStore('settings'), clock)) } as Value;
+      await runInTransaction(tx, [() => tx.objectStore(store).put(stored as never)]);
       return stored;
     },
     async remove(key) {
-      const record = (await db.get(store, key)) as Value | undefined;
+      const tx = db.transaction([store, 'settings'], 'readwrite');
+      const record = (await tx.objectStore(store).get(key)) as Value | undefined;
       if (!record) throw new Error(`No record ${JSON.stringify(key)} in ${store}`);
-      const now = clock().toISOString();
-      await db.put(store, { ...record, updatedAt: now, deletedAt: now } as never);
+      if (!isLive(record)) return tx.done;
+      const stamp = await nextStamp(tx.objectStore('settings'), clock);
+      const tombstone = { ...record, ...stamp, deletedAt: stamp.updatedAt };
+      await runInTransaction(tx, [() => tx.objectStore(store).put(tombstone as never)]);
     },
     changedSince(timestamp) {
       return index(IDBKeyRange.lowerBound(timestamp, true));
@@ -57,17 +62,17 @@ export function createRepository<S extends SyncedStoreName>(db: Db, store: S, cl
   };
 }
 
-/** Saves an import's transactions and its record in one IndexedDB transaction (spec v1 §8.1): all or nothing. */
+/** Saves an import's transactions and its record in one IndexedDB transaction (spec v1 §8.1): all or nothing, one stamp. */
 export async function commitImport(
   db: Db,
   record: ImportRecord,
   transactions: readonly Transaction[],
   clock: Clock = systemClock,
 ): Promise<void> {
-  const now = clock();
-  const tx = db.transaction(['transactions', 'imports'], 'readwrite');
+  const tx = db.transaction(['transactions', 'imports', 'settings'], 'readwrite');
+  const stamp = await nextStamp(tx.objectStore('settings'), clock);
   await runInTransaction(tx, [
-    () => tx.objectStore('imports').put(stamp(record, now)),
-    ...transactions.map((t) => () => tx.objectStore('transactions').put(stamp(t, now))),
+    () => tx.objectStore('imports').put({ ...withoutSyncFields(record), ...stamp }),
+    ...transactions.map((t) => () => tx.objectStore('transactions').put({ ...withoutSyncFields(t), ...stamp })),
   ]);
 }

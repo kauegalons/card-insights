@@ -4,10 +4,9 @@ import type { ParsedRow } from './types';
 
 export type StoredTransaction = Pick<Transaction, 'date' | 'merchant' | 'amountCents' | 'fingerprint'>;
 
-/** Occurrences of a fingerprint the user deleted (`dismissed` store, T15). */
-export interface DismissedOccurrences {
+/** One occurrence the user deleted (a live record in the `dismissed` store, T15). */
+export interface DismissedOccurrence {
   fingerprint: string;
-  count: number;
 }
 
 /** Disjoint counts: `added + existing + review` is the number of rows in the file. */
@@ -41,19 +40,20 @@ export function fingerprint(row: Pick<ParsedRow, 'date' | 'merchant' | 'amountCe
   return `${row.date}|${normalizeMerchant(row.merchant)}|${row.amountCents}|${installment}`;
 }
 
-function increment(counts: Map<string, number>, key: string, by = 1): void {
-  counts.set(key, (counts.get(key) ?? 0) + by);
+function increment(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
 /**
- * Per fingerprint, adds `max(0, countInFile − countStored − countDismissed)` rows. Only stored transactions
+ * Per fingerprint, adds `max(0, countInFile − countStored − countDismissed)` rows, where `countDismissed` is
+ * the number of `dismissed` entries with that fingerprint (one per deleted occurrence). Only stored transactions
  * within the file's date range count. A new fingerprint whose `date + amountCents` matches a stored row with
  * another merchant is added as `review`.
  */
 export function dedupe(
   rows: readonly ParsedRow[],
   stored: readonly StoredTransaction[],
-  dismissed: readonly DismissedOccurrences[] = [],
+  dismissed: readonly DismissedOccurrence[] = [],
 ): DedupeResult {
   const dates = rows.map((r) => r.date).sort();
   const [from, to] = [dates[0], dates[dates.length - 1]];
@@ -70,7 +70,7 @@ export function dedupe(
 
   // Occurrences already accounted for, consumed as matching rows come in.
   const skip = new Map(storedCount);
-  for (const d of dismissed) increment(skip, d.fingerprint, d.count);
+  for (const d of dismissed) increment(skip, d.fingerprint);
 
   const toAdd: DedupedRow[] = [];
   const summary: ImportSummary = { added: 0, existing: 0, review: 0 };
