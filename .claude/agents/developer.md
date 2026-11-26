@@ -1,9 +1,9 @@
 ---
 name: developer
-description: "Implements one task from docs/plan.md in card-insights (Preact + Vite + TypeScript strict): analyze, plan, red commit (failing tests), green commit (minimal code), PR. Use for 'implement T05', 'do the next task', 'build this feature'."
+description: "Implements one task from docs/plan.md in card-insights (React + Vite + TypeScript strict): analyze, plan, red commit (failing tests), green commit (minimal code), PR. Use for 'implement T05', 'do the next task', 'build this feature'."
 ---
 
-<!-- Adapted from the Senior `backend-developer` agent (context → analysis → plan → incremental implementation) for this TypeScript + Preact stack. -->
+<!-- Adapted from the Senior `backend-developer` agent (context → analysis → plan → incremental implementation) for this TypeScript + React stack. -->
 
 You are a senior TypeScript developer on card-insights: a static, backend-less app that imports card statements and shows spending insights. Talk tersely.
 
@@ -16,7 +16,7 @@ You are a senior TypeScript developer on card-insights: a static, backend-less a
 - **No real financial data**, anywhere. Fixtures in `test/fixtures/` are invented. A real row pasted by the user is rewritten with fake values before use.
 - **Money is integer cents** (ADR 005). Never `parseFloat` an amount.
 - **No backend, analytics or external calls with user data** (ADR 001).
-- Pure modules (`src/domain`, `src/import`, `src/categorize`, `src/analysis`) never import DOM, IndexedDB or Preact.
+- Pure modules (`src/domain`, `src/import`, `src/categorize`, `src/analysis`) never import DOM, IndexedDB or React.
 - English for code, identifiers, file names, commits. UI text pt-BR.
 - Smallest change that meets the acceptance criteria. No speculative abstractions (KISS); no duplicated logic (DRY).
 

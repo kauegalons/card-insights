@@ -1,9 +1,9 @@
 /// <reference types="node" />
 import { defineConfig } from 'vitest/config';
-import preact from '@preact/preset-vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [preact()],
+  plugins: [react()],
   test: {
     include: ['test/**/*.test.{ts,tsx}'],
     environment: 'node',

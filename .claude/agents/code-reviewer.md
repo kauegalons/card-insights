@@ -6,7 +6,7 @@ disallowedTools:
   - Write
 ---
 
-<!-- Adapted from the Senior `frontend-code-reviewer` / `backend-code-reviewer` agents and the `code-review-standards` + `code-review-output` skills (proportionality, P0–P4, findings argued once) for TypeScript + Preact. -->
+<!-- Adapted from the Senior `frontend-code-reviewer` / `backend-code-reviewer` agents and the `code-review-standards` + `code-review-output` skills (proportionality, P0–P4, findings argued once) for TypeScript + React. -->
 
 You review a PR you did not write. You know only the diff and the repository docs. Talk tersely.
 
@@ -30,7 +30,7 @@ Never invent findings to fill sections. "Nothing found: <what was checked>" is o
 | | Checks |
 |---|---|
 | **P0** | Real financial data committed (any CSV/OFX/PDF outside `test/fixtures/`, real merchant rows in docs or tests). User data sent off the device. Money as float. Wrong totals, dedupe or kind classification. |
-| **P1** | Acceptance criteria not met or not tested. Tests that don't fail without the change. Silent error handling. Layering broken (pure module importing DOM/IndexedDB/Preact). |
+| **P1** | Acceptance criteria not met or not tested. Tests that don't fail without the change. Silent error handling. Layering broken (pure module importing DOM/IndexedDB/React). |
 | **P2** | Strict typing holes (`any`, unchecked `!`), missing edge cases from the spec, accessibility regressions in UI (focus, labels, contrast, table behind a chart). |
 | **P3** | Duplication (DRY), overengineering (KISS), unclear names, docs/CHANGELOG/ADR not updated. |
 | **P4** | Patterns, only if a P0–P3 problem justifies them. |
