@@ -31,7 +31,7 @@ Use **IndexedDB** through the [`idb`](https://github.com/jakearchibald/idb) wrap
 - Repositories hide the API, so the domain stays pure and tests stay fast.
 
 **Costs**
-- **Eviction risk:** browsers may clear it under storage pressure, and Safari (WebKit's ITP) deletes script-writable storage, IndexedDB included, after 7 days of Safari use without interaction with the site. Web apps added to the Home Screen are exempt, which is one more reason for the installable PWA (T20). Mitigated by `navigator.storage.persist()`, backups and an import reminder (T22).
+- **Eviction risk:** browsers may clear it under storage pressure, and Safari (WebKit's ITP) deletes script-writable storage, IndexedDB included, after 7 days of Safari use without interaction with the site. Web apps added to the Home Screen are exempt, which is one more reason for the installable PWA (T27). Mitigated by `navigator.storage.persist()`, backups and an import reminder (T29).
 - Migrations are hand-written and must be tested.
 - Not encrypted at rest by the app.
 

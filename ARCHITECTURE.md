@@ -1,5 +1,7 @@
 # Architecture (v1)
 
+Build order ([plan](docs/plan.md)): foundation and domain (done) → categorization → analysis → **encrypted sync** → **assistant** (Claude Code commands) → **approved prototype** → screens in React → PWA and quality → demo v1.
+
 <p align="center"><img src="docs/assets/hld-light.png" alt="High-level design: on a laptop or phone, the browser runs the whole app. A statement CSV goes into the Preact UI, the pure TypeScript import and rules core saves transactions to IndexedDB, and the UI reads them back. Your data stays in the browser. Cloudflare Workers Static Assets only serves the static HTML, JS and CSS, one way." width="720"></p>
 
 ## Module map
@@ -10,19 +12,22 @@
 
 | Concern | How | Decision |
 |---|---|---|
-| Where the data lives | Only in the browser. The host serves static files; there is no API | [ADR 001](docs/adr/001-static-app-without-backend.md) |
-| UI and build | Preact + Vite + TypeScript `strict`; Vitest for tests | [ADR 002](docs/adr/002-preact-vite-typescript-strict.md) |
-| Storage | IndexedDB through `idb`: stores `transactions`, `imports`, `rules`, `categories`, `settings`, `dismissed`, with versioned migrations and JSON backup | [ADR 003](docs/adr/003-indexeddb-for-storage.md) |
+| Where the data lives | One instance per person, one owner. IndexedDB in the browser, synced end-to-end encrypted to the owner's own Worker + D1 behind Cloudflare Access (owner's e-mail only), with a recovery key; visitors use local mode. Sync comes before the UI (Phase 4). Supersedes ADR 001 | [ADR 011](docs/adr/011-self-hosted-instances-with-mandatory-e2e-sync.md) |
+| UI and build | React + Vite + TypeScript `strict`; Vitest for tests | [ADR 010](docs/adr/010-react-replaces-preact.md), [ADR 002](docs/adr/002-preact-vite-typescript-strict.md) |
+| Storage | IndexedDB through `idb`: stores `transactions`, `imports`, `rules`, `categories`, `settings`, `dismissed` (plus `limits` and `plans` later), with versioned migrations; JSON export optional | [ADR 003](docs/adr/003-indexeddb-for-storage.md) |
 | Hosting and deploy | Cloudflare Workers Static Assets with SPA fallback; deploy on merge, preview URL per PR (alternative: GitHub Pages) | [ADR 004](docs/adr/004-cloudflare-workers-static-assets-hosting.md) |
 | Money | Integer cents everywhere; a pt-BR parser and formatter at the edges | [ADR 005](docs/adr/005-money-in-integer-cents.md) |
 | Re-imports | Fingerprint (`date + merchant + amount + installment`) plus occurrence count; near-matches go to review | [ADR 006](docs/adr/006-dedupe-by-fingerprint-and-occurrence-count.md) |
-| Categorization | Editable `contains` / `regex` rules by priority; a correction becomes a rule. No AI | [ADR 007](docs/adr/007-editable-rules-for-categorization-without-ai.md) |
+| Durability and sync | Random ids, monotonic `updatedAt` + `updatedBy`, tombstones; last-write-wins; an account epoch for delete all and restore | [ADR 008](docs/adr/008-data-durability-local-first-sync-ready.md), [ADR 009](docs/adr/009-sync-clock-and-record-identity.md), [ADR 011](docs/adr/011-self-hosted-instances-with-mandatory-e2e-sync.md) |
+| Categorization | Editable category tree and `contains` / `regex` rules by priority; a correction becomes a rule and asks before touching past rows. No AI in the app | [ADR 007](docs/adr/007-editable-rules-for-categorization-without-ai.md) |
+| Budget | Periods by statement (default) or calendar month; 50/30/20 with editable percentages; a limit per category; warning at 80%, over at 100% | [Spec §6](docs/spec/v1.md#6-analysis) |
+| Assistant | Claude Code commands outside the app: `/organizar` writes rules, limits and a monthly plan to the cloud as encrypted records; `/investir` compares options. No AI API | [ADR 012](docs/adr/012-assistant-as-claude-code-commands.md) |
 | Bank formats | One `ImportAdapter` per format, chosen by `detect()`; v1 ships `nubank-card-csv` | [Spec §3](docs/spec/v1.md#3-import) |
 | Privacy in the repo | `.gitignore` blocks statements; CI guard fails a PR that adds one outside `test/fixtures/` | [SECURITY.md](SECURITY.md) |
 
-**Dependency rule.** `domain`, `import`, `categorize` and `analysis` are pure functions over plain data: no DOM, no IndexedDB, no Preact. `storage` persists their output; `ui` wires them together. This keeps the core testable without a browser and lets T04–T12 run in parallel with the UI tasks.
+**Dependency rule.** `domain`, `import`, `categorize` and `analysis` are pure functions over plain data: no DOM, no IndexedDB, no React. `storage` persists their output, `sync` (Phase 4) moves it encrypted to the owner's backend, and `ui` wires them together. This keeps the core testable without a browser, and lets the assistant commands reuse it.
 
-**Limits of this design.** Data is per browser and per device: no sync between phone and laptop except a manual backup file. Browsers can evict IndexedDB under storage pressure (the app asks for persistent storage, but it is not guaranteed), so backups matter. Categorization is only as good as the rules; unknown merchants stay "Uncategorized" until the user fixes one.
+**Limits of this design.** Until the owner turns on the cloud, data is per browser and per device, and browsers can evict IndexedDB under storage pressure (the app asks for persistent storage, but it is not guaranteed). With the cloud on, losing both the passphrase and the recovery key loses the cloud copy. Categorization is only as good as the rules; unknown merchants stay "Uncategorized" until the user fixes one.
 
 ## CI and deploy
 
@@ -50,9 +55,11 @@ src/
   categorize/    rules engine, category tree
   analysis/      totals, 50/30/20, insights
   storage/       IndexedDB repositories, migrations, backup
+  sync/          crypto and sync engine (Phase 4)
   ui/            pages/, components/, theme/
 test/
   fixtures/      FICTITIOUS statements only
 docs/            PRD, spec, ADRs, plan, architecture diagrams (draw.py)
 .claude/agents/  developer, test-writer, code-reviewer
+.claude/commands/ /organizar, /investir (Phase 5)
 ```
