@@ -37,9 +37,28 @@ Preview URLs are on for both Workers (`"preview_urls": true`). The `test` job ru
 
 **PRs from forks** get no secrets and only a read-only token: their upload steps fail without failing the job (`continue-on-error`), and the `report` job cannot write to the PR, so **a fork PR gets no comment at all**. Its results are in the checks (the `test` job log and its `test-reports` artifact). If an upload step fails with "You cannot upload a new version of a Worker that does not yet exist", `main` has not deployed yet: wait for the first `deploy` job and re-run the PR job.
 
-### Retention: previews stay public after the PR closes
+### Put Cloudflare Access in front of the previews
 
-Closing or merging a PR does not remove anything. The `pr-<N>` alias URLs and every per-commit version URL of both Workers stay reachable by anyone with the link until you remove them. They hold no user data (the app keeps everything in the visitor's browser; the report holds test code and fictitious fixtures), but they do expose old builds and test code.
+Previews are for you, not for visitors ([ADR 011](adr/011-self-hosted-instances-with-mandatory-e2e-sync.md)). Put them behind Cloudflare Access with a policy for your own e-mail, for **both** Workers (`card-insights` and `card-insights-tests`), and leave production open: the public app at `card-insights.<your-subdomain>.workers.dev` must keep working in local mode for anyone. This is a one-time manual step in the dashboard; CI does not change and keeps uploading previews with the same token.
+
+For each of the two Workers:
+
+1. Cloudflare dashboard → **Workers & Pages** → the Worker → **Settings** → **Domains & Routes**.
+2. On the **Preview URLs** row, turn on **Cloudflare Access** (the row's menu or toggle). Do **not** turn it on for the `workers.dev` row: that is production.
+3. Cloudflare creates a Zero Trust Access application for the preview URLs. Open it (**Manage Cloudflare Access**, or Zero Trust → Access → Applications) and set its policy to **Allow**, with an **Include** rule of type **Emails** that lists only your e-mail. Remove any broader rule (e.g. "everyone" or an e-mail domain).
+4. If it is your first Access application, Zero Trust asks you to pick a team name and the free plan; one owner fits the free plan.
+
+The dashboard labels above were not verified against the current Cloudflare UI when this was written; if a name differs, look for the Access option on the Worker's preview URLs, not on its `workers.dev` route.
+
+Check it:
+
+- In a private window, open a `pr-<N>-card-insights.<your-subdomain>.workers.dev` link from a PR comment: Cloudflare asks you to log in, and a one-time code sent to your e-mail lets you in. Do the same with a `card-insights-tests` preview link.
+- In a private window, `https://card-insights.<your-subdomain>.workers.dev` opens the app with no login.
+- From a terminal, `curl -sI <preview URL>` answers with a redirect to `<team>.cloudflareaccess.com` instead of `200`.
+
+### Retention: previews outlive the PR
+
+Closing or merging a PR does not remove anything. The `pr-<N>` alias URLs and every per-commit version URL of both Workers stay reachable until you remove them: with Access in front of them, only to you; without it, to anyone with the link. They hold no user data (the app keeps everything in the visitor's browser; the report holds test code and fictitious fixtures), but they do expose old builds and test code.
 
 Wrangler has no command to delete a single preview alias, so CI does not clean them up. To take them down:
 
