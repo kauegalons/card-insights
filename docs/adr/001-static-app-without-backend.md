@@ -20,7 +20,7 @@ Build card-insights as a **static single-page app**. The host serves HTML, JavaS
 |---|---|
 | **Backend with an API and a database** (e.g. a Worker + D1) | Statements would sit on a server: one more thing to secure, a reason not to trust the app, and accounts to build. Gains sync between devices, which v1 doesn't need. |
 | **End-to-end encrypted sync** (client-side encryption, server stores blobs) | Solves sync without trusting the server, but adds key management, recovery and a backend. Too much for v1; the backup file covers the need. |
-| **Desktop app** (Electron, Tauri) | Not on the phone, which is where I check spending; installing is a barrier for anyone else. A PWA gets install and offline from the browser ([T20](../plan.md)). |
+| **Desktop app** (Electron, Tauri) | Not on the phone, which is where I check spending; installing is a barrier for anyone else. A PWA gets install and offline from the browser ([T27](../plan.md)). |
 
 ## Consequences
 

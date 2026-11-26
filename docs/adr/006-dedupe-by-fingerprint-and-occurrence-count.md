@@ -34,7 +34,7 @@ Users will import the same statement more than once: by mistake, or a partial ex
 - Renamed rows surface for a human decision instead of being guessed.
 
 **Costs**
-- If the bank removes a row from a later export (e.g. a cancelled purchase), dedupe doesn't delete it; the user deletes it by hand (T15). Deleted occurrences are kept in a `dismissed` store so a re-import doesn't bring them back.
+- If the bank removes a row from a later export (e.g. a cancelled purchase), dedupe doesn't delete it; the user deletes it by hand (T22). Deleted occurrences are kept in a `dismissed` store so a re-import doesn't bring them back.
 - If the bank changes a merchant name in a way that also changes the date or amount, the row duplicates.
 - Counting is over the file's date range, so a stored row that falls outside it is never matched; that is correct, since its fingerprint holds a date outside the file.
 

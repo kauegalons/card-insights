@@ -17,7 +17,7 @@ The v1 plan covered this with `navigator.storage.persist()` and a manual JSON ba
 **v1 stays local (ADR 001 holds) and adds three layers of protection:**
 
 1. **Persistent storage.** On start the app calls `navigator.storage.persist()`. Settings show whether it was granted; if it wasn't, a banner says the data may be evicted and suggests installing the app and turning on backups.
-2. **Installable app (PWA, T20).** On iOS, a home screen app is not subject to ITP's 7-day deletion, so the app invites installation after the first import.
+2. **Installable app (PWA, T27).** On iOS, a home screen app is not subject to ITP's 7-day deletion, so the app invites installation after the first import.
 3. **Automatic backup.**
    - Where the File System Access API exists (Chrome and Edge on desktop), the user picks a backup file once (`showSaveFilePicker`). The handle is kept in IndexedDB, and the app rewrites the file after every import and every data change (debounced).
    - Everywhere else (Safari, Firefox, mobile), after each import and whenever the last backup is older than 30 days, a banner offers a one-tap download of the JSON backup.
@@ -67,4 +67,4 @@ The v1 plan covered this with `navigator.storage.persist()` and a manual JSON ba
 - [ADR 003: IndexedDB for storage](003-indexeddb-for-storage.md)
 - [ADR 006: dedupe by fingerprint and occurrence count](006-dedupe-by-fingerprint-and-occurrence-count.md)
 - [Spec v1, §7](../spec/v1.md#7-storage)
-- [Plan: T07, T18, T20, T22 and Phase 6](../plan.md)
+- [Plan: T07, T25, T27, T29 and Phase 4](../plan.md)
