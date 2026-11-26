@@ -31,7 +31,7 @@ Decisions that change the design get an ADR in [`docs/adr/`](docs/adr/README.md)
 
 - Code, file names, identifiers and commit messages in **English**. Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `test:`, `docs:`, `chore:`). User-facing text is pt-BR.
 - Money is always integer cents (`amountCents: number`), never a float ([ADR 005](docs/adr/005-money-in-integer-cents.md)).
-- Domain code (`src/domain`, `src/import`, `src/categorize`, `src/analysis`) is pure TypeScript: no DOM, no IndexedDB, no Preact.
+- Domain code (`src/domain`, `src/import`, `src/categorize`, `src/analysis`) is pure TypeScript: no DOM, no IndexedDB, no React.
 
 ## Privacy rule
 

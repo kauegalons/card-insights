@@ -127,7 +127,7 @@ def hld():
     b.append(phone(94, 338, PURPLE) + text(129, 490, "Phone", 17, 700))
     # the browser, on the device: everything the app does happens in here
     b.append(container(300, 60, 640, 500, "Browser · on your device", "lock", GREEN, fill=tint(GREEN, .035), stroke=tint(GREEN, .45), label_color=GREEN))
-    b.append(tile(440, 300, "Preact UI", "layout", PURPLE, "pages and charts"))
+    b.append(tile(440, 300, "React UI", "layout", PURPLE, "pages and charts"))
     b.append(tile(700, 185, "Import + rules", "workflow", BLUE, "pure TypeScript core"))
     b.append(tile(700, 405, "IndexedDB", "database", GREEN, "transactions, rules"))
     b.append(icon("lock", 330, 524, 16, GREEN) + text(354, 537, "Your data stays here: no server, no API, no analytics.", 14, 600, GREEN, "start"))
@@ -156,7 +156,7 @@ def v1():
     b.append(tile(120, 165, "Statement CSV", "file", SAND, None, 64))
     b.append(container(240, 40, 1220, 610, "Browser · everything runs here", "lock", GREEN, fill=tint(GREEN, .03), stroke=tint(GREEN, .45), label_color=GREEN))
     b.append(container(450, 80, 760, 540, "Pure TypeScript · no DOM", None, fill="#FFFFFF"))
-    b.append(tile(340, 430, "ui/", "layout", PURPLE, "Preact pages", S))
+    b.append(tile(340, 430, "ui/", "layout", PURPLE, "React pages", S))
     b.append(tile(560, 180, "import/adapters", "plug", BLUE, "nubank-card-csv", S))
     b.append(tile(790, 180, "import/dedupe", "copycheck", BLUE, "fingerprint", S))
     b.append(tile(1060, 180, "categorize/", "tag", TEAL, "rules, tree", S))

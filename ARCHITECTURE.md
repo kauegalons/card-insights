@@ -2,7 +2,7 @@
 
 Build order ([plan](docs/plan.md)): foundation and domain (done) → categorization → analysis → **encrypted sync** → **assistant** (Claude Code commands) → **approved prototype** → screens in React → PWA and quality → demo v1.
 
-<p align="center"><img src="docs/assets/hld-light.png" alt="High-level design: on a laptop or phone, the browser runs the whole app. A statement CSV goes into the Preact UI, the pure TypeScript import and rules core saves transactions to IndexedDB, and the UI reads them back. Your data stays in the browser. Cloudflare Workers Static Assets only serves the static HTML, JS and CSS, one way." width="720"></p>
+<p align="center"><img src="docs/assets/hld-light.png" alt="High-level design: on a laptop or phone, the browser runs the whole app. A statement CSV goes into the React UI, the pure TypeScript import and rules core saves transactions to IndexedDB, and the UI reads them back. Your data stays in the browser. Cloudflare Workers Static Assets only serves the static HTML, JS and CSS, one way." width="720"></p>
 
 ## Module map
 
