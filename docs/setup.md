@@ -1,6 +1,6 @@
 # Setup: deploy your own
 
-card-insights is static files served by Cloudflare Workers Static Assets ([ADR 004](adr/004-cloudflare-workers-static-assets-hosting.md)). There is no server and no database to set up: your data stays in your browser. Deploying your own copy takes a Cloudflare account (the free plan is enough), a fork and two repository secrets.
+card-insights is self-hosted: one instance per person, on your own Cloudflare account, and only you log in to yours ([ADR 011](adr/011-self-hosted-instances-with-mandatory-e2e-sync.md)). Today the app is static files served by Cloudflare Workers Static Assets ([ADR 004](adr/004-cloudflare-workers-static-assets-hosting.md)), and deploying your own copy takes a Cloudflare account (the free plan is enough), a fork and two repository secrets. Phase 4 adds the encrypted sync backend; its steps are listed under [Coming in Phase 4](#coming-in-phase-4).
 
 ## What gets deployed
 
@@ -46,8 +46,17 @@ Wrangler has no command to delete a single preview alias, so CI does not clean t
 - **All previews of a Worker**: set `"preview_urls": false` in `wrangler.jsonc` (or `reports.wrangler.jsonc`) and deploy, or turn off Preview URLs in the dashboard (Workers & Pages → the Worker → Settings → Domains & Routes). Turn it back on before the next PR needs a preview.
 - **Everything, including production**: delete the Worker (`npx wrangler delete`, or `npx wrangler delete -c reports.wrangler.jsonc` for the report Worker). The next push to `main` creates it again.
 
+## Coming in Phase 4
+
+These steps arrive with the sync backend ([plan, Phase 4](plan.md)); this page will get the exact commands then.
+
+- **D1 database** for the encrypted copy of your data, bound to the Worker API (T15).
+- **Cloudflare Access application** in front of the API, with a policy that admits only your e-mail (T15).
+- **Turn on the cloud** in the app: a passphrase and a **recovery key** shown once. Keep the key somewhere safe and offline; without the passphrase and the key, the cloud copy can't be read by anyone, you included (T14, T25).
+- **Claude Code** in your clone for `/organizar` and `/investir`, and how the commands log in to your API (T13, T17).
+
 ## Related
 
-- [ADR 001: static app without a backend](adr/001-static-app-without-backend.md)
+- [ADR 011: self-hosted instances with mandatory end-to-end encrypted sync](adr/011-self-hosted-instances-with-mandatory-e2e-sync.md)
 - [ADR 004: Cloudflare Workers Static Assets](adr/004-cloudflare-workers-static-assets-hosting.md)
 - [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
