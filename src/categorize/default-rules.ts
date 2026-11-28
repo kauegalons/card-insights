@@ -11,13 +11,14 @@ export const DEFAULT_RULE_PRIORITY = 1000;
 
 const PATTERNS: readonly (readonly [string, string, string])[] = [
   ['Transporte', 'Combustível', '\\b(?:auto ?)?posto\\b|\\b(?:combustive(?:l|is)|shell|ipiranga|petrobras|br mania)\\b'],
-  ['Transporte', 'Apps de corrida', '\\b(?:uber|99 ?(?:app|pop|taxi)|corridas?|cabify|indriver)\\b'],
+  ['Transporte', 'Apps de corrida', '\\b(?:uber(?! ?eats)|99 ?(?:app|pop|taxi)|corridas?|cabify|indriver)\\b'],
   ['Transporte', 'Estacionamento e pedágio', '\\b(?:estacionamento|estapar|sem parar|conectcar|veloe|pedagio)\\b'],
   ['Transporte', 'Transporte público', '\\b(?:metro|sptrans|bilhete unico|cptm|onibus|brt)\\b'],
   ['Alimentação', 'Mercado', '\\b(?:super|hiper|mini)?mercado\\b(?! ?(?:livre|pago))|\\b(?:atacadao|assai|carrefour|pao de acucar)\\b'],
   ['Alimentação', 'Hortifrúti', '\\b(?:hortifrut+i|sacolao|quitanda|feira)\\b'],
   ['Alimentação', 'Padaria', '\\b(?:padaria|panificadora|panificacao|confeitaria)\\b'],
-  ['Alimentação', 'Delivery', '\\b(?:ifood|rappi|ze delivery|delivery)\\b'],
+  // Brands only: a bare "delivery" also names pharmacies and restaurants that deliver.
+  ['Alimentação', 'Delivery', '\\b(?:ifood|rappi|ze delivery|uber ?eats)\\b'],
   ['Alimentação', 'Restaurante', "\\b(?:restaurante|lanchonete|churrascaria|pizzaria|hamburgueria|mcdonald'?s|burger king|outback)\\b"],
   ['Moradia', 'Aluguel e condomínio', '\\b(?:aluguel|condominio|imobiliaria|quinto ?andar)\\b'],
   ['Moradia', 'Energia, água e gás', '\\b(?:enel|cemig|copel|sabesp|cedae|comgas|ultragaz|liquigas|energia|saneamento)\\b'],
@@ -31,7 +32,8 @@ const PATTERNS: readonly (readonly [string, string, string])[] = [
   ['Assinaturas', 'Streaming', '\\b(?:netflix|spotify|disney|hbo ?max|globoplay|prime video|youtube premium|deezer|paramount|crunchyroll|streaming)\\b'],
   ['Compras', 'Eletrônicos', '\\b(?:kabum|eletronicos?|fast shop|magazine luiza|magalu)\\b'],
   ['Compras', 'Vestuário e calçados', '\\b(?:renner|riachuelo|c&a|zara|centauro|netshoes|hering|calcados|roupas|vestuario)\\b'],
-  ['Casa e serviços', 'Telefonia e internet', '\\b(?:vivo|claro|tim|telefonica|telecom|internet|fibra)\\b'],
+  // Carrier names are common words: a merchant that starts as a bar ("Bar Claro") is left to Bares below.
+  ['Casa e serviços', 'Telefonia e internet', '^(?!(?:bar|boteco|choperia|cervejaria|pub)\\b).*?\\b(?:vivo|claro|tim|telefonica|telecom|internet|fibra)\\b'],
   ['Casa e serviços', 'Consultoria', '\\b(?:consultoria|assessoria|contabilidade|contador)\\b'],
   ['Lazer e viagem', 'Passagens', '\\b(?:latam|gol linhas|azul linhas|passagens?|aerea|rodoviaria|buser|clickbus|decolar)\\b'],
   ['Lazer e viagem', 'Hospedagem', '\\b(?:hote(?:l|is)|pousada|hostel|airbnb|booking)\\b'],

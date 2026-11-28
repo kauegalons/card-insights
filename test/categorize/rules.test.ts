@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categorize, recategorizeAll, ruleMatcher, validateRule } from '../../src/categorize/rules';
+import { MAX_MATCHED_MERCHANT_LENGTH, categorize, recategorizeAll, ruleMatcher, validateRule } from '../../src/categorize/rules';
 import type { Rule } from '../../src/domain/category';
 import type { Transaction } from '../../src/domain/transaction';
 
@@ -45,14 +45,44 @@ describe('ruleMatcher', () => {
     expect(ruleMatcher([rule({ id: 'r1', pattern: 'posto' })])('Loja Exemplo')).toBeUndefined();
   });
 
-  it('throws a clear error naming the rule when a stored regex is invalid', () => {
-    expect(() => ruleMatcher([rule({ id: 'r9', match: 'regex', pattern: '(' })])).toThrow(
-      /^Rule r9: Invalid regular expression "\("/,
-    );
+  it('skips a stored rule that is invalid and reports it, so the other rules still run', () => {
+    const match = ruleMatcher([
+      rule({ id: 'r9', match: 'regex', pattern: '(', priority: 1 }),
+      rule({ id: 'r8', match: 'regex', pattern: '(a+)+$', priority: 2 }),
+      rule({ id: 'r1', pattern: 'posto' }),
+    ]);
+    expect(match('Posto Exemplo')?.id).toBe('r1');
+    expect(match.invalid.map((i) => i.rule.id)).toEqual(['r9', 'r8']);
+    expect(match.invalid[0]?.error).toMatch(/^Invalid regular expression "\("/);
+    expect(match.invalid[1]?.error).toMatch(/nested quantifier/);
+  });
+
+  it('reports no invalid rule when all compile', () => {
+    expect(ruleMatcher([rule({ id: 'r1', pattern: 'posto' })]).invalid).toEqual([]);
+  });
+
+  it('tests only the first MAX_MATCHED_MERCHANT_LENGTH characters of the normalized merchant', () => {
+    const match = ruleMatcher([rule({ id: 'r1', match: 'regex', pattern: 'posto$' })]);
+    expect(match(`${'a'.repeat(MAX_MATCHED_MERCHANT_LENGTH - 6)} posto`)?.id).toBe('r1');
+    expect(match(`${'a'.repeat(MAX_MATCHED_MERCHANT_LENGTH)} posto`)).toBeUndefined();
   });
 });
 
 describe('validateRule', () => {
+  it.each(['(a+)+', '(a*)*', '(\\w+\\s?)*$', '((ab)+c)+', '(?:x+){2,}', '(a+){3,9}'])(
+    'rejects the nested quantifier %s, which can hang the app (ReDoS)',
+    (pattern) => {
+      expect(() => validateRule({ match: 'regex', pattern, priority: 1 })).toThrow(`Rule pattern has a nested quantifier: "${pattern}"`);
+    },
+  );
+
+  it.each(['(a+)?', '(?:auto ?)?posto', '\\b(?:hortifrut+i|feira)\\b', '\\(a+\\)+', '([+*])+', '(ab){2}'])(
+    'accepts %s, which has no nested quantifier',
+    (pattern) => {
+      expect(() => validateRule({ match: 'regex', pattern, priority: 1 })).not.toThrow();
+    },
+  );
+
   it('accepts a valid contains and a valid regex rule', () => {
     expect(() => validateRule({ match: 'contains', pattern: 'posto', priority: 1 })).not.toThrow();
     expect(() => validateRule({ match: 'regex', pattern: '^posto\\b', priority: 1 })).not.toThrow();

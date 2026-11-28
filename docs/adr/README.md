@@ -16,5 +16,6 @@ Each ADR records one decision: context, decision, alternatives, consequences and
 | [010](010-react-replaces-preact.md) | React replaces Preact for the UI | Accepted |
 | [011](011-self-hosted-instances-with-mandatory-e2e-sync.md) | Self-hosted single-owner instances; end-to-end encrypted sync (Worker + D1 behind Cloudflare Access, recovery key) in every deploy, before the UI; file backup optional | Accepted |
 | [012](012-assistant-as-claude-code-commands.md) | The assistant is Claude Code commands (`/organizar`, `/investir`) outside the app; the app calls no AI API | Accepted |
+| [013](013-derived-data-migrations.md) | Derived data migrations: changing merchant normalization, adapter cleanup or `learnedRulePattern` migrates fingerprints, merchants and learned rule patterns; changing a shipped default migrates unedited stored defaults | Accepted |
 
 The Status column is the only place an older ADR's status changes; its file stays as written.

@@ -228,6 +228,7 @@ Cada pessoa roda a **própria instância** (fork + Cloudflare próprio) e só o 
 - **Aceite:** testes com D1 local; sem login a API responde 401/403; uma mudança de época anterior é recusada.
 
 ### T16 · `feat/sync-engine`
+- Regras recebidas do sync passam por `validateRule` antes de gravar; uma inválida (regex que não compila ou com quantificador aninhado) é recusada com erro claro. O `ruleMatcher` já pula e reporta as inválidas que escaparem, para nenhuma travar a importação.
 - Envia `changedSince(cursor)`, onde o cursor é o maior `updatedAt` já enviado (nunca o relógio de parede), recebe as mudanças remotas, aplica last-write-wins por `(updatedAt, updatedBy)`, propaga tombstones e sobe `lastStampAt` até o `updatedAt` remoto mais novo ([ADR 009](adr/009-sync-clock-and-record-identity.md)).
 - Aplica a regra de época: apagar tudo ou restaurar sobe a época; um aparelho numa época antiga recomeça do servidor.
 - Migração do esquema: as settings sincronizadas viram registros (T13); `backupFileHandle` e `lastBackupAt` saem (o backup automático em arquivo acabou, ADR 011).

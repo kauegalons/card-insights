@@ -42,6 +42,15 @@ describe('learnedRulePattern', () => {
     expect(match('cafe (exemplo) 2x0*')).toBeUndefined();
   });
 
+  it('is pinned for fixed merchants: changing it, normalizeMerchant or the adapter cleanup needs a migration (ADR 013)', () => {
+    const merchant = (title: string) => nubankCardCsv.parse(`date,title,amount\n2026-11-10,${title},"1,00"\n`, { fileName: 'x.csv' })[0]?.merchant ?? '';
+    expect(learnedRulePattern('Padaria Exemplo')).toBe('^padaria exemplo$');
+    expect(learnedRulePattern('  Café   (Exemplo) 2.0* ')).toBe('^cafe \\(exemplo\\) 2\\.0\\*$');
+    expect(learnedRulePattern(merchant('Dl*Corridas Exemplo'))).toBe('^corridas exemplo$');
+    expect(learnedRulePattern(merchant('Drogaria Exemplo - Parcela 1/2'))).toBe('^drogaria exemplo$');
+    expect(learnedRulePattern(merchant('Cafe Exemplo I*Vmt*Cielo'))).toBe('^cafe exemplo$');
+  });
+
   it('rejects a blank merchant', () => {
     expect(() => learnedRulePattern('   ')).toThrow('Cannot learn a rule for a blank merchant');
   });

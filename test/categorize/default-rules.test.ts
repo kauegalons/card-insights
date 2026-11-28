@@ -33,6 +33,11 @@ describe('DEFAULT_RULES', () => {
     ['Anuidade Exemplo', 'Anuidade'],
     ['Cafe Exemplo I*Vmt*Cielo', 'Sem categoria'],
     ['Loja Exemplo', 'Sem categoria'],
+    ['Uber Eats Exemplo', 'Delivery'],
+    ['Drogaria Delivery Exemplo', 'Farmácia'],
+    ['Bar Claro Exemplo', 'Bares'],
+    ['Uber Viagem Exemplo', 'Apps de corrida'],
+    ['Claro Telefonia Exemplo', 'Telefonia e internet'],
   ])('puts the fixture merchant %s in %s', (rawTitle, expected) => {
     const row = rows.find((r) => r.rawTitle === rawTitle);
     expect(row).toBeDefined();
