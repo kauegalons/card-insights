@@ -30,13 +30,16 @@ export function validateRule(rule: Pick<Rule, 'match' | 'pattern' | 'priority'>)
   compile(rule);
 }
 
+/** Rule order: ascending `priority`, ties by `id`, so every device picks the same rule. */
+export const byPriorityThenId = (a: Rule, b: Rule): number => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 /**
  * Compiles `rules` once and returns the first that matches a merchant, by ascending `priority` then `id` (so every
  * device picks the same rule), or undefined. A stored rule that fails to compile throws `Rule <id>: …`.
  */
 export function ruleMatcher(rules: readonly Rule[]): (merchant: string) => Rule | undefined {
   const compiled = [...rules]
-    .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .sort(byPriorityThenId)
     .map((rule) => {
       try {
         return { rule, test: compile(rule) };

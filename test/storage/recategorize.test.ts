@@ -82,6 +82,23 @@ describe('commitRecategorization', () => {
     db.close();
   });
 
+  it('tombstones the duplicate learned rules of the merchant in the same transaction', async () => {
+    const { db, clock, set } = await setup();
+    const rules = createRepository(db, 'rules', clock);
+    const pattern = learnedRulePattern('Cafe Exemplo');
+    await rules.put({ id: 'rule-a', match: 'regex', pattern, categoryId: BAKERY, priority: LEARNED_RULE_PRIORITY, origin: 'user' });
+    await rules.put({ id: 'rule-b', match: 'regex', pattern, categoryId: PHARMACY, priority: LEARNED_RULE_PRIORITY, origin: 'user' });
+    set('2026-11-24T12:00:00.000Z');
+
+    const result = await commitRecategorization(db, 't1', RESTAURANT, false, clock);
+
+    const at = stamped('2026-11-24T12:00:00.000Z');
+    expect(await learnedRules(db)).toEqual([expect.objectContaining({ id: 'rule-a', categoryId: RESTAURANT, ...at })]);
+    expect((await rules.changedSince('2026-11-24T11:00:00.000Z')).find((r) => r.id === 'rule-b')).toMatchObject({ deletedAt: at.updatedAt, ...at });
+    expect(result.deletedRuleIds).toEqual(['rule-b']);
+    db.close();
+  });
+
   it('writes nothing for an unknown or deleted transaction', async () => {
     const { db, clock } = await setup();
     await createRepository(db, 'transactions').remove('t4');

@@ -5,6 +5,7 @@
 import type { Rule } from '../domain/category';
 import { normalizeMerchant } from '../domain/merchant';
 import type { Transaction } from '../domain/transaction';
+import { byPriorityThenId } from './rules';
 
 /**
  * Priority of a learned rule: below `DEFAULT_RULE_PRIORITY` (1000), so it runs before every default. Learned rules
@@ -26,17 +27,22 @@ export function learnedRulePattern(merchant: string): string {
 
 /**
  * The transaction with `categoryId` as a manual choice, and the user rule that sends its merchant there: the
- * existing learned rule for that merchant with the new category (same id and priority), or a new one.
+ * existing learned rule for that merchant with the new category (same id and priority), or a new one. Two devices
+ * offline (or a restore) can leave several user rules with the same pattern: the first by priority then id (the
+ * one the matcher picks) is updated and the others are returned in `deletedRuleIds`, to tombstone.
  */
 export function recategorize<T extends Categorizable>(
   transaction: T,
   categoryId: string,
   rules: readonly Rule[],
   newId: () => string = () => crypto.randomUUID(),
-): { transaction: T; rule: Rule } {
+): { transaction: T; rule: Rule; deletedRuleIds: string[] } {
   const pattern = learnedRulePattern(transaction.merchant);
-  const existing = rules.find((r) => r.origin === 'user' && r.match === 'regex' && r.pattern === pattern);
+  const [existing, ...duplicates] = rules
+    .filter((r) => r.origin === 'user' && r.match === 'regex' && r.pattern === pattern)
+    .sort(byPriorityThenId);
   return {
+    deletedRuleIds: duplicates.map((r) => r.id),
     transaction: { ...transaction, categoryId, categorySource: 'manual' },
     rule: existing
       ? { ...existing, categoryId }
