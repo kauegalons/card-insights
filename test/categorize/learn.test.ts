@@ -5,7 +5,7 @@ import {
   applyToPast,
   LEARNED_RULE_PRIORITY,
   learnedRulePattern,
-  pastMatchesFor,
+  otherMatchesFor,
   recategorize,
 } from '../../src/categorize/learn';
 import { categorize, ruleMatcher, validateRule } from '../../src/categorize/rules';
@@ -113,7 +113,7 @@ describe('recategorize', () => {
   });
 });
 
-describe('pastMatchesFor', () => {
+describe('otherMatchesFor', () => {
   const corrected = row('t1', 'Cafe Exemplo');
   const stored = [
     corrected,
@@ -126,11 +126,11 @@ describe('pastMatchesFor', () => {
   ];
 
   it('lists the other live, non-manual transactions of the same merchant that the category would change', () => {
-    expect(ids(pastMatchesFor(corrected, RESTAURANT, stored))).toEqual(['t2', 't3']);
+    expect(ids(otherMatchesFor(corrected, RESTAURANT, stored))).toEqual(['t2', 't3']);
   });
 
   it('never counts manual choices, so N excludes them', () => {
-    expect(pastMatchesFor(corrected, RESTAURANT, stored).some((t) => t.categorySource === 'manual')).toBe(false);
+    expect(otherMatchesFor(corrected, RESTAURANT, stored).some((t) => t.categorySource === 'manual')).toBe(false);
   });
 });
 
@@ -157,11 +157,11 @@ describe('learning, end to end (pure)', () => {
     expect(after).toMatchObject({ categoryId: RESTAURANT, categorySource: 'rule' });
   });
 
-  it('with "no", the past transactions stay as they were', () => {
+  it('with "no", the other transactions stay as they were', () => {
     const stored = [row('t1', 'Cafe Exemplo'), row('t2', 'Cafe Exemplo', { categoryId: BAKERY, categorySource: 'rule' })];
     const snapshot = structuredClone(stored);
     recategorize(stored[0] as Row, RESTAURANT, DEFAULT_RULES, fixedId);
-    pastMatchesFor(stored[0] as Row, RESTAURANT, stored);
+    otherMatchesFor(stored[0] as Row, RESTAURANT, stored);
     expect(stored).toEqual(snapshot);
   });
 });
