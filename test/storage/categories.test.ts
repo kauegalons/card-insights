@@ -5,7 +5,7 @@ import { DEFAULT_CATEGORIES } from '../../src/categorize/tree';
 import { commitCategoryDeletion, seedDefaults } from '../../src/storage/categories';
 import { openDatabase, type Db } from '../../src/storage/db';
 import { createRepository } from '../../src/storage/repository';
-import { ensureDeviceId } from '../../src/storage/settings';
+import { ensureDeviceId, getSetting } from '../../src/storage/settings';
 import { category, fakeClock, rule, stamped, transaction } from './helpers';
 
 async function open(name?: string): Promise<Db> {
@@ -59,6 +59,25 @@ describe('seedDefaults', () => {
     expect(await categories.get(first.id)).toEqual(renamed);
     expect(await categories.get(second.id)).toBeUndefined();
     expect(await categories.changedSince('2026-11-24T11:00:00.000Z')).toEqual(changes);
+    db.close();
+  });
+
+  it('skips a new default whose parent the user deleted, and the rules pointing to it, so nothing is orphaned', async () => {
+    const db = await open();
+    await seedDefaults(db);
+    const transport = DEFAULT_CATEGORIES.find((c) => c.name === 'Transporte');
+    const fuel = DEFAULT_CATEGORIES.find((c) => c.name === 'Combustível');
+    const fuelRules = DEFAULT_RULES.filter((r) => r.categoryId === fuel?.id);
+    if (!transport || !fuel || fuelRules.length === 0) throw new Error('default tree changed');
+    await createRepository(db, 'categories').remove(transport.id);
+    // As if a later version added "Combustível" and its rule: neither is stored yet.
+    await db.delete('categories', fuel.id);
+    for (const r of fuelRules) await db.delete('rules', r.id);
+
+    await seedDefaults(db);
+
+    expect(await db.get('categories', fuel.id)).toBeUndefined();
+    for (const r of fuelRules) expect(await db.get('rules', r.id)).toBeUndefined();
     db.close();
   });
 });
@@ -122,11 +141,26 @@ describe('commitCategoryDeletion', () => {
   it('writes nothing when the target is invalid', async () => {
     const db = await setup();
     const before = await createRepository(db, 'categories').changedSince('');
+    const rulesBefore = await createRepository(db, 'rules').changedSince('');
+    const stampBefore = await getSetting(db, 'lastStampAt');
     await expect(commitCategoryDeletion(db, 'bakery', 'food')).rejects.toThrow(
       `Target food must be a subcategory that is not being deleted, or "${UNCATEGORIZED}"`,
     );
     expect(await createRepository(db, 'categories').changedSince('')).toEqual(before);
     expect((await createRepository(db, 'transactions').get('t1'))?.categoryId).toBe('bakery');
+    expect(await createRepository(db, 'rules').changedSince('')).toEqual(rulesBefore);
+    expect(await getSetting(db, 'lastStampAt')).toBe(stampBefore);
+    db.close();
+  });
+
+  it('returns the moved records as stored, with the new stamp', async () => {
+    const db = await setup();
+    const at = '2026-11-25T10:00:00.000Z';
+    const result = await commitCategoryDeletion(db, 'bakery', 'grocery', fakeClock(at).clock);
+    const transactions = createRepository(db, 'transactions');
+    expect(result.transactions).toEqual([await transactions.get('t1'), await transactions.get('t2')]);
+    expect(result.rules).toEqual([await createRepository(db, 'rules').get('r1')]);
+    expect(result.rules[0]?.updatedAt).toBe(at);
     db.close();
   });
 

@@ -159,7 +159,7 @@ describe('restoreBackup', () => {
     ['an unknown kind', (b) => firstTransaction(b, { kind: 'gift' }), 'Invalid backup: data.transactions[0].kind must be one of "purchase", "refund", "payment", "fee" (got "gift")'],
     ['a malformed installment', (b) => firstTransaction(b, { installment: { n: 7, total: 6 } }), 'Invalid backup: data.transactions[0].installment must be { n, total } with 1 ≤ n ≤ total (got {"n":7,"total":6})'],
     ['a non-string deletedAt', (b) => firstTransaction(b, { deletedAt: 1 }), 'Invalid backup: data.transactions[0].deletedAt must be an ISO timestamp (got 1)'],
-    ['a rule whose regex does not compile', (b) => ({ ...b, data: { ...b.data, rules: [{ ...rule('r'), match: 'regex', pattern: '(', ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.rules[0].pattern must be a valid rule pattern (got "(")'],
+    ['a rule whose regex does not compile', (b) => ({ ...b, data: { ...b.data, rules: [{ ...rule('r'), match: 'regex', pattern: '(', ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.rules[0].pattern must be a valid rule pattern (got "(": Invalid regular expression "(":'],
     ['an unknown setting', (b) => settings(b, { key: 'theme', value: 'dark' }), 'Invalid backup: data.settings[0].key must be one of "monthlyIncomeCents", "statementClosingDay", "demo", "lastBackupAt" (got "theme")'],
     ['a closing day out of range', (b) => settings(b, { key: 'statementClosingDay', value: 40 }), 'Invalid backup: data.settings[0].value must be a day of the month, 1 to 31 (got 40)'],
   ];

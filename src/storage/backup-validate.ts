@@ -84,9 +84,9 @@ export function validateRecord(store: StoreName, record: unknown, where: string)
   if (store === 'rules') {
     try {
       validateRule(record as Parameters<typeof validateRule>[0]); // fields checked above
-    } catch {
-      // validateRule's message names the pattern; ours names the field, like the checks above
-      throw new Error(`${where}.pattern must be a valid rule pattern (got ${show(record.pattern)})`);
+    } catch (error) {
+      // Names the field, like the checks above, and keeps validateRule's reason.
+      throw new Error(`${where}.pattern must be a valid rule pattern (got ${show(record.pattern)}: ${(error as Error).message})`);
     }
   }
 }
