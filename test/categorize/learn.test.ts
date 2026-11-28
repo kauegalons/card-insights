@@ -157,7 +157,7 @@ describe('learning, end to end (pure)', () => {
     expect(after).toMatchObject({ categoryId: RESTAURANT, categorySource: 'rule' });
   });
 
-  it('with "no", the past transactions stay as they were', () => {
+  it('with "no", the other transactions stay as they were', () => {
     const stored = [row('t1', 'Cafe Exemplo'), row('t2', 'Cafe Exemplo', { categoryId: BAKERY, categorySource: 'rule' })];
     const snapshot = structuredClone(stored);
     recategorize(stored[0] as Row, RESTAURANT, DEFAULT_RULES, fixedId);

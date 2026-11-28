@@ -212,7 +212,7 @@ export async function undoCategoryDeletion(db: Db, undo: CategoryDeletionUndo, c
 /**
  * Changes transaction `id` to `categoryId` (spec v1 §5, §8.2) in one IndexedDB transaction with one stamp: the
  * transaction as a manual choice, the learned rule for its merchant (`recategorize`, `newId` for a new rule; its
- * duplicates become tombstones) and, only with `applyPast` (the user's yes), the past transactions `otherMatchesFor` lists. An unknown or deleted
+ * duplicates become tombstones) and, only with `applyPast` (the user's yes), the other transactions `otherMatchesFor` lists. An unknown or deleted
  * transaction, or a category that isn't a live subcategory, throws and writes nothing.
  */
 export async function commitRecategorization(

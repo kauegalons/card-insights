@@ -1,6 +1,6 @@
 /**
  * Learning from a correction (spec v1 §5, ADR 007): changing a transaction's category makes it manual and creates
- * (or updates) a user rule for exactly that merchant; applying it to past transactions is a separate, asked step.
+ * (or updates) a user rule for exactly that merchant; applying it to the other transactions of that merchant is a separate, asked step.
  */
 import type { Rule } from '../domain/category';
 import { normalizeMerchant } from '../domain/merchant';
@@ -70,7 +70,7 @@ export function otherMatchesFor<T extends Categorizable & Pick<Transaction, 'id'
   );
 }
 
-/** The "yes" answer: each past transaction in `categoryId`, as a rule decision (never manual). */
+/** The "yes" answer: each other transaction of the merchant in `categoryId`, as a rule decision (never manual). */
 export function applyToPast<T extends Categorizable>(past: readonly T[], categoryId: string): T[] {
   return past.map((t) => ({ ...t, categoryId, categorySource: 'rule' }));
 }
