@@ -111,7 +111,12 @@ export async function commitRecategorization(
   if (category === undefined || !isLive(category) || category.parentId === undefined) {
     return abortWith(tx, new Error(`Category ${JSON.stringify(categoryId)} is not a live subcategory`));
   }
-  const learned = recategorize(target, categoryId, storedRules.filter(isLive), newId);
+  let learned: ReturnType<typeof recategorize<Stored<Transaction>>>;
+  try {
+    learned = recategorize(target, categoryId, storedRules.filter(isLive), newId);
+  } catch (error) {
+    return abortWith(tx, error); // a blank merchant can't have a learned rule
+  }
   const past = applyToPast(pastMatchesFor(target, categoryId, storedTransactions), categoryId);
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
   const written = {

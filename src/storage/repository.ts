@@ -74,7 +74,8 @@ export interface ImportCommit {
 /**
  * Saves an import in one IndexedDB transaction (spec v1 §8.1), all or nothing, with one stamp: its record, its
  * new transactions categorized by the live stored rules (`categorize`: learned rules first, manual rows kept), and
- * the stored ones it moves to its statement (an unknown or deleted id is skipped).
+ * the stored ones it moves to its statement (an unknown or deleted id is skipped). A non-manual category set by the
+ * caller is replaced by the rules' decision (or removed on no match), so `seedDefaults` must run before an import.
  */
 export async function commitImport(db: Db, commit: ImportCommit, clock: Clock = systemClock): Promise<void> {
   const tx = db.transaction(['transactions', 'imports', 'rules', 'settings'], 'readwrite');

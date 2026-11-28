@@ -87,6 +87,16 @@ describe('commitRecategorization', () => {
     db.close();
   });
 
+  it('writes nothing for a transaction with a blank merchant', async () => {
+    const { db, clock } = await setup();
+    await commitImport(db, { record: importRecord('import-2'), transactions: [transaction('blank', { merchant: '  ' })] }, clock);
+    const stampBefore = await getSetting(db, 'lastStampAt');
+    await expect(commitRecategorization(db, 'blank', RESTAURANT, false, clock)).rejects.toThrow('Cannot learn a rule for a blank merchant');
+    expect(await learnedRules(db)).toEqual([]);
+    expect(await getSetting(db, 'lastStampAt')).toBe(stampBefore);
+    db.close();
+  });
+
   it('writes nothing when the category is not a live subcategory', async () => {
     const { db, clock } = await setup();
     await createRepository(db, 'categories').remove(BAKERY);
@@ -111,6 +121,7 @@ describe('commitImport categorizes with the stored rules', () => {
         transaction('n1', { merchant: 'Cafe Exemplo', importId: 'import-2' }),
         transaction('n2', { merchant: 'Padaria Exemplo', importId: 'import-2' }),
         transaction('n3', { merchant: 'Loja Sem Regra', importId: 'import-2' }),
+        transaction('n4', { merchant: 'Cafe Exemplo', importId: 'import-2', categoryId: BAKERY, categorySource: 'manual' }),
       ],
     }, clock);
 
@@ -118,6 +129,7 @@ describe('commitImport categorizes with the stored rules', () => {
     expect(after.get('n1')).toMatchObject({ categoryId: RESTAURANT, categorySource: 'rule' });
     expect(after.get('n2')).toMatchObject({ categoryId: BAKERY, categorySource: 'rule' });
     expect(after.get('n3')?.categoryId).toBeUndefined();
+    expect(after.get('n4')).toMatchObject({ categoryId: BAKERY, categorySource: 'manual' });
     db.close();
   });
 
