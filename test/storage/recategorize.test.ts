@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LEARNED_RULE_PRIORITY, learnedRulePattern } from '../../src/categorize/learn';
 import { DEFAULT_RULES } from '../../src/categorize/default-rules';
+import { UNCATEGORIZED } from '../../src/categorize/edit';
 import { recategorizeAll } from '../../src/categorize/rules';
 import { DEFAULT_CATEGORIES } from '../../src/categorize/tree';
-import { commitCategoryDeletion, commitRecategorizeAll, commitRecategorization, seedDefaults } from '../../src/storage/categories';
+import { commitCategoryDeletion, commitRecategorizeAll, commitRecategorization, planSeed, seedDefaults } from '../../src/storage/categories';
 import { openDatabase, type Db } from '../../src/storage/db';
 import { commitImport, createRepository } from '../../src/storage/repository';
 import { defaultSubcategoryId } from '../../src/categorize/tree';
@@ -200,6 +201,32 @@ describe('seeding is guaranteed before rules run', () => {
   });
 });
 
+describe('seeding never overrides a higher-priority rule', () => {
+  it('a row kept out of a learned rule by a "no" is not filled by a seeded default the learned rule outranks', async () => {
+    const bakeryRule = DEFAULT_RULES.find((r) => r.categoryId === BAKERY);
+    if (!bakeryRule) throw new Error('default rules changed');
+    const stamp = stamped('2026-11-24T10:00:00.000Z');
+    const categories = DEFAULT_CATEGORIES.map((c) => ({ ...c, ...stamp }));
+    const learned = { id: 'rule-1', match: 'regex' as const, pattern: learnedRulePattern('Padaria Exemplo'), categoryId: RESTAURANT, priority: LEARNED_RULE_PRIORITY, origin: 'user' as const, ...stamp };
+    const rules = [...DEFAULT_RULES.filter((r) => r.id !== bakeryRule.id).map((r) => ({ ...r, ...stamp })), learned];
+    const rows = [{ ...transaction('kept'), ...stamp }, { ...transaction('gap', { merchant: 'Padaria Exemplo Filial' }), ...stamp }];
+
+    const seed = await planSeed(categories, rules, async () => rows);
+
+    expect(seed.rules.map((r) => r.id)).toEqual([bakeryRule.id]);
+    expect(seed.transactions).toEqual([{ ...rows[1], categoryId: BAKERY, categorySource: 'rule' }]);
+  });
+
+  it('commitImport fills a stored uncategorized row that it does not move, with the import stamp', async () => {
+    const db = await openDatabase();
+    await ensureDeviceId(db, () => 'device-1');
+    await createRepository(db, 'transactions', fakeClock().clock).put(transaction('u1', { merchant: 'Padaria Exemplo' }));
+    await commitImport(db, { record: importRecord('import-1'), transactions: [] }, fakeClock('2026-11-25T10:00:00.000Z').clock);
+    expect((await byId(db)).get('u1')).toMatchObject({ categoryId: BAKERY, categorySource: 'rule', ...stamped('2026-11-25T10:00:00.000Z') });
+    db.close();
+  });
+});
+
 describe('commitRecategorizeAll', () => {
   it('re-runs the live rules over every live non-manual row and writes only the changed ones, in one stamp', async () => {
     const { db, clock, set } = await setup();
@@ -231,6 +258,17 @@ describe('commitRecategorizeAll', () => {
     const rows = await createRepository(db, 'transactions').list();
     const rules = await createRepository(db, 'rules').list();
     expect(recategorizeAll(rows, rules)).toEqual([]);
+    db.close();
+  });
+
+  it('does not run after a deletion to Uncategorized: the rows stay without a category, as the user chose', async () => {
+    const { db, clock } = await setup();
+    await commitRecategorization(db, 't1', RESTAURANT, true, clock, () => 'rule-1');
+    await commitRecategorization(db, 't4', PHARMACY, false, clock, () => 'rule-2');
+    await commitCategoryDeletion(db, RESTAURANT, UNCATEGORIZED, clock);
+    const after = await byId(db);
+    expect(after.get('t2')?.categoryId).toBeUndefined();
+    expect(after.get('t1')?.categoryId).toBeUndefined();
     db.close();
   });
 });
