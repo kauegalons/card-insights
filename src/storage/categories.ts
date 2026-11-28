@@ -1,12 +1,20 @@
-/** Category tree writes that span stores (spec v1 §5): seeding the defaults and deleting with reassignment. */
+/** Category writes that span stores (spec v1 §5): seeding the defaults, deleting with reassignment, recategorizing. */
 import { DEFAULT_RULES } from '../categorize/default-rules';
 import { deleteCategory, type CategoryDeletion } from '../categorize/edit';
+import { applyToPast, pastMatchesFor, recategorize } from '../categorize/learn';
 import { DEFAULT_CATEGORIES } from '../categorize/tree';
 import type { Rule } from '../domain/category';
 import type { Transaction } from '../domain/transaction';
 import { runInTransaction, systemClock, type Clock, type Db, type Stored } from './db';
 import { isLive } from './repository';
 import { nextStamp } from './stamp';
+
+/** Aborts `tx` (nothing is written) and rethrows `error`, the cause. */
+async function abortWith(tx: { abort(): void; done: Promise<void> }, error: unknown): Promise<never> {
+  tx.abort();
+  await tx.done.catch(() => undefined); // rejects with AbortError because of the abort above
+  throw error;
+}
 
 /**
  * Writes each default category and rule whose fixed id isn't stored yet, live or tombstone, in one transaction
@@ -57,9 +65,7 @@ export async function commitCategoryDeletion(
   try {
     deletion = deleteCategory(storedCategories.filter(isLive), storedTransactions.filter(isLive), storedRules.filter(isLive), id, target);
   } catch (error) {
-    tx.abort();
-    await tx.done.catch(() => undefined); // rejects with AbortError because of the abort above; the cause is `error`
-    throw error;
+    return abortWith(tx, error);
   }
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
   const tombstone = { ...stamp, deletedAt: stamp.updatedAt };
@@ -76,4 +82,52 @@ export async function commitCategoryDeletion(
     ...storedRules.filter((r) => isLive(r) && deletedRules.has(r.id)).map((r) => () => rules.put({ ...r, ...tombstone })),
   ]);
   return { ...deletion, ...moved };
+}
+
+/**
+ * Changes transaction `id` to `categoryId` (spec v1 §5, §8.2) in one IndexedDB transaction with one stamp: the
+ * transaction as a manual choice, the learned rule for its merchant (`recategorize`, `newId` for a new rule) and,
+ * only with `applyPast` (the user's yes), the past transactions `pastMatchesFor` lists. An unknown or deleted
+ * transaction, or a category that isn't a live subcategory, throws and writes nothing.
+ */
+export async function commitRecategorization(
+  db: Db,
+  id: string,
+  categoryId: string,
+  applyPast: boolean,
+  clock: Clock = systemClock,
+  newId?: () => string,
+): Promise<{ transaction: Stored<Transaction>; rule: Stored<Rule>; past: Stored<Transaction>[] }> {
+  const tx = db.transaction(['categories', 'transactions', 'rules', 'settings'], 'readwrite');
+  const transactions = tx.objectStore('transactions');
+  const rules = tx.objectStore('rules');
+  const [category, target, storedRules, storedTransactions] = await Promise.all([
+    tx.objectStore('categories').get(categoryId),
+    transactions.get(id),
+    rules.getAll(),
+    applyPast ? transactions.getAll() : [],
+  ]);
+  if (target === undefined || !isLive(target)) return abortWith(tx, new Error(`No transaction ${JSON.stringify(id)}`));
+  if (category === undefined || !isLive(category) || category.parentId === undefined) {
+    return abortWith(tx, new Error(`Category ${JSON.stringify(categoryId)} is not a live subcategory`));
+  }
+  let learned: ReturnType<typeof recategorize<Stored<Transaction>>>;
+  try {
+    learned = recategorize(target, categoryId, storedRules.filter(isLive), newId);
+  } catch (error) {
+    return abortWith(tx, error); // a blank merchant can't have a learned rule
+  }
+  const past = applyToPast(pastMatchesFor(target, categoryId, storedTransactions), categoryId);
+  const stamp = await nextStamp(tx.objectStore('settings'), clock);
+  const written = {
+    transaction: { ...learned.transaction, ...stamp },
+    rule: { ...learned.rule, ...stamp },
+    past: past.map((t) => ({ ...t, ...stamp })),
+  };
+  await runInTransaction(tx, [
+    () => transactions.put(written.transaction),
+    () => rules.put(written.rule),
+    ...written.past.map((t) => () => transactions.put(t)),
+  ]);
+  return written;
 }
