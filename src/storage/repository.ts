@@ -1,5 +1,6 @@
 /** Sync-ready repositories (spec v1 §7, ADR 008, ADR 009): every write is stamped; deletes are tombstones. */
 import type { StoreValue } from 'idb';
+import { categorize } from '../categorize/rules';
 import type { Transaction } from '../domain/transaction';
 import { runInTransaction, systemClock, type Clock, type Db, type ImportRecord, type Schema, type SyncFields, type SyncedStoreName } from './db';
 import { nextStamp } from './stamp';
@@ -72,18 +73,21 @@ export interface ImportCommit {
 
 /**
  * Saves an import in one IndexedDB transaction (spec v1 §8.1), all or nothing, with one stamp: its record, its
- * new transactions, and the stored ones it moves to its statement (an unknown or deleted id is skipped).
+ * new transactions categorized by the live stored rules (`categorize`: learned rules first, manual rows kept), and
+ * the stored ones it moves to its statement (an unknown or deleted id is skipped).
  */
 export async function commitImport(db: Db, commit: ImportCommit, clock: Clock = systemClock): Promise<void> {
-  const tx = db.transaction(['transactions', 'imports', 'settings'], 'readwrite');
+  const tx = db.transaction(['transactions', 'imports', 'rules', 'settings'], 'readwrite');
   const transactions = tx.objectStore('transactions');
+  const rules = (await tx.objectStore('rules').getAll()).filter(isLive);
+  const added = categorize(commit.transactions, rules);
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
   const moved = (await Promise.all((commit.moveToStatement ?? []).map((id) => transactions.get(id))))
     .filter((t): t is NonNullable<typeof t> => t !== undefined && isLive(t))
     .map((t) => ({ ...t, statementId: commit.record.statementId, ...stamp }));
   await runInTransaction(tx, [
     () => tx.objectStore('imports').put({ ...withoutSyncFields(commit.record), ...stamp }),
-    ...commit.transactions.map((t) => () => transactions.put({ ...withoutSyncFields(t), ...stamp })),
+    ...added.map((t) => () => transactions.put({ ...withoutSyncFields(t), ...stamp })),
     ...moved.map((t) => () => transactions.put(t)),
   ]);
 }
