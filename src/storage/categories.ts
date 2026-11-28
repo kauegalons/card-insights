@@ -184,7 +184,7 @@ export async function commitRecategorization(
     () => transactions.put(written.transaction),
     () => rules.put(written.rule),
     ...written.past.map((t) => () => transactions.put(t)),
-    ...storedRules.filter((r) => isLive(r) && duplicates.has(r.id)).map((r) => () => rules.put({ ...r, ...stamp, deletedAt: stamp.updatedAt })),
+    ...storedRules.filter((r) => duplicates.has(r.id)).map((r) => () => rules.put({ ...r, ...stamp, deletedAt: stamp.updatedAt })),
   ]);
   return written;
 }

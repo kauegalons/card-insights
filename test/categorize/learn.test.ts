@@ -84,6 +84,15 @@ describe('recategorize', () => {
     expect(result.deletedRuleIds).toEqual(['rule-b']);
   });
 
+  it('keeps the duplicate with the lower priority even when its id sorts later', () => {
+    const pattern = learnedRulePattern('Cafe Exemplo');
+    const low: Rule = { id: 'rule-z', match: 'regex', pattern, categoryId: BAKERY, priority: 50, origin: 'user' };
+    const high: Rule = { id: 'rule-a', match: 'regex', pattern, categoryId: GROCERIES, priority: LEARNED_RULE_PRIORITY, origin: 'user' };
+    const result = recategorize(row('t1', 'Cafe Exemplo'), RESTAURANT, [high, low], fixedId);
+    expect(result.rule.id).toBe('rule-z');
+    expect(result.deletedRuleIds).toEqual(['rule-a']);
+  });
+
   it('deletes no rule when the merchant has at most one', () => {
     expect(recategorize(row('t1', 'Cafe Exemplo'), RESTAURANT, DEFAULT_RULES, fixedId).deletedRuleIds).toEqual([]);
   });
