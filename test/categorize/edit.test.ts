@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCategory, deleteCategory, renameCategory, UNCATEGORIZED } from '../../src/categorize/edit';
+import { createCategory, deleteCategory, deletionImpact, renameCategory, UNCATEGORIZED } from '../../src/categorize/edit';
 import { DEFAULT_CATEGORIES } from '../../src/categorize/tree';
 import type { Category, Rule } from '../../src/domain/category';
 import type { Transaction } from '../../src/domain/transaction';
@@ -103,6 +103,24 @@ describe('renameCategory', () => {
     expect(() => renameCategory(categories, 'nope', 'X')).toThrow('Unknown category nope');
     expect(() => renameCategory(categories, 'bakery', ' ')).toThrow('Category name must not be empty');
     expect(() => renameCategory(categories, 'bakery', 'Mercado')).toThrow('A category named "Mercado" already exists there');
+  });
+});
+
+describe('deletionImpact', () => {
+  it('counts the transactions and rules that point to a top-level category or its subcategories, and lists the subcategories', () => {
+    expect(deletionImpact(categories, transactions, rules, 'food')).toEqual({
+      transactions: 3,
+      rules: 2,
+      subcategories: [categories[1], categories[2]],
+    });
+  });
+
+  it('for a subcategory, counts only what points to it', () => {
+    expect(deletionImpact(categories, transactions, rules, 'pharmacy')).toEqual({ transactions: 1, rules: 1, subcategories: [] });
+  });
+
+  it('rejects an unknown category', () => {
+    expect(() => deletionImpact(categories, transactions, rules, 'nope')).toThrow('Unknown category nope');
   });
 });
 
