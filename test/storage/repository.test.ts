@@ -4,7 +4,10 @@ import { nubankCardCsv } from '../../src/import/adapters/nubank-card-csv';
 import { dedupe } from '../../src/import/dedupe';
 import { commitImport, createRepository } from '../../src/storage/repository';
 import { ensureDeviceId, getSetting } from '../../src/storage/settings';
+import { defaultSubcategoryId } from '../../src/categorize/tree';
 import { dismissed, fakeClock, importRecord, stamped, transaction } from './helpers';
+
+const BAKERY = defaultSubcategoryId('Alimentação', 'Padaria');
 
 /** A database whose deviceId is `device-1`. */
 async function open(name?: string): Promise<Db> {
@@ -174,7 +177,7 @@ describe('repository', () => {
 });
 
 describe('commitImport', () => {
-  it('stores the transactions and the import record together, with one stamp', async () => {
+  it('stores the transactions, categorized by the seeded defaults, and the import record together, with one stamp', async () => {
     const db = await open();
     const { clock } = fakeClock('2026-11-24T10:00:00.000Z');
 
@@ -183,10 +186,18 @@ describe('commitImport', () => {
     const stamp = stamped('2026-11-24T10:00:00.000Z');
     expect(await createRepository(db, 'imports').list()).toEqual([{ ...importRecord('import-1'), ...stamp }]);
     expect(await createRepository(db, 'transactions').list()).toEqual([
-      { ...transaction('t1'), ...stamp },
-      { ...transaction('t2'), ...stamp },
+      { ...transaction('t1'), categoryId: BAKERY, categorySource: 'rule', ...stamp },
+      { ...transaction('t2'), categoryId: BAKERY, categorySource: 'rule', ...stamp },
     ]);
     expect(await getSetting(db, 'lastStampAt')).toBe('2026-11-24T10:00:00.000Z');
+    db.close();
+  });
+
+  it('a stored row both moved and filled by the seeded rules keeps both changes', async () => {
+    const db = await open();
+    await createRepository(db, 'transactions').put(transaction('p1', { statementId: '2026-10-20' }));
+    await commitImport(db, { record: importRecord('import-2'), transactions: [], moveToStatement: ['p1'] });
+    expect(await createRepository(db, 'transactions').get('p1')).toMatchObject({ statementId: '2026-11-11', categoryId: BAKERY, categorySource: 'rule' });
     db.close();
   });
 
