@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categorize, ruleMatcher, validateRule } from '../../src/categorize/rules';
+import { categorize, recategorizeAll, ruleMatcher, validateRule } from '../../src/categorize/rules';
 import type { Rule } from '../../src/domain/category';
 import type { Transaction } from '../../src/domain/transaction';
 
@@ -93,5 +93,28 @@ describe('categorize', () => {
   it('never overwrites a manual choice', () => {
     const manual: Row = { merchant: 'Posto Exemplo', categoryId: 'mine', categorySource: 'manual' };
     expect(categorize<Row>([manual], rules)).toEqual([manual]);
+  });
+});
+
+describe('recategorizeAll', () => {
+  const rules = [rule({ id: 'r1', pattern: 'posto', categoryId: 'fuel' })];
+  type IdRow = Row & { id: string };
+
+  it('returns only the non-manual rows whose category the rules change, with the decision of the rules', () => {
+    const rows: IdRow[] = [
+      { id: 'a', merchant: 'Posto Exemplo' },
+      { id: 'b', merchant: 'Posto Exemplo', categoryId: 'fuel', categorySource: 'rule' },
+      { id: 'c', merchant: 'Loja Exemplo', categoryId: 'old', categorySource: 'rule' },
+      { id: 'd', merchant: 'Posto Exemplo', categoryId: 'mine', categorySource: 'manual' },
+      { id: 'e', merchant: 'Loja Exemplo' },
+    ];
+    expect(recategorizeAll(rows, rules)).toEqual([
+      { id: 'a', merchant: 'Posto Exemplo', categoryId: 'fuel', categorySource: 'rule' },
+      { id: 'c', merchant: 'Loja Exemplo' },
+    ]);
+  });
+
+  it('returns nothing when the rows already agree with the rules', () => {
+    expect(recategorizeAll<IdRow>([{ id: 'a', merchant: 'Posto Exemplo', categoryId: 'fuel', categorySource: 'rule' }], rules)).toEqual([]);
   });
 });
