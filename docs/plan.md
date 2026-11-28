@@ -174,7 +174,7 @@ Documentação base, no formato da referência.
 
 ### T09 · `feat/recategorize-and-learn`
 - Ao corrigir a categoria de uma transação, ela fica `categorySource: 'manual'` e nasce uma regra de usuário para aquele comerciante, acima das padrão.
-- O app **pergunta** se aplica às transações antigas do mesmo comerciante ("Aplicar às N transações anteriores?"); só aplica com o sim, e nunca sobre escolhas manuais.
+- O app **pergunta** se aplica às outras transações do mesmo comerciante, anteriores ou posteriores ("Aplicar às outras N transações?"); só aplica com o sim, e nunca sobre escolhas manuais.
 - **Aceite:** depois da correção, uma nova importação do mesmo comerciante já vem categorizada; a contagem N da pergunta exclui as manuais; com "não", as antigas ficam como estavam.
 
 ## Fase 3: Análise

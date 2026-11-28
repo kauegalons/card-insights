@@ -51,10 +51,10 @@ export function recategorize<T extends Categorizable>(
 }
 
 /**
- * The transactions "Apply to N past transactions?" would change: other than `transaction`, live, same merchant
- * (normalized), not manual, and not already in `categoryId`. N is the length.
+ * The transactions "Aplicar às outras N transações?" would change: other than `transaction`, live, same merchant
+ * (normalized), not manual, and not already in `categoryId`, whatever their date (later rows too). N is the length.
  */
-export function pastMatchesFor<T extends Categorizable & Pick<Transaction, 'id'> & { deletedAt?: string }>(
+export function otherMatchesFor<T extends Categorizable & Pick<Transaction, 'id'> & { deletedAt?: string }>(
   transaction: Pick<Transaction, 'id' | 'merchant'>,
   categoryId: string,
   transactions: readonly T[],

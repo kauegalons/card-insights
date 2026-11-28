@@ -1,7 +1,7 @@
 /** Category writes that span stores (spec v1 §5): seeding the defaults, deleting with reassignment, recategorizing. */
 import { DEFAULT_RULES } from '../categorize/default-rules';
 import { deleteCategory, nameKey, type CategoryDeletion } from '../categorize/edit';
-import { applyToPast, pastMatchesFor, recategorize } from '../categorize/learn';
+import { applyToPast, otherMatchesFor, recategorize } from '../categorize/learn';
 import { recategorizeAll, ruleMatcher } from '../categorize/rules';
 import { DEFAULT_CATEGORIES } from '../categorize/tree';
 import type { Category, Rule } from '../domain/category';
@@ -212,7 +212,7 @@ export async function undoCategoryDeletion(db: Db, undo: CategoryDeletionUndo, c
 /**
  * Changes transaction `id` to `categoryId` (spec v1 §5, §8.2) in one IndexedDB transaction with one stamp: the
  * transaction as a manual choice, the learned rule for its merchant (`recategorize`, `newId` for a new rule; its
- * duplicates become tombstones) and, only with `applyPast` (the user's yes), the past transactions `pastMatchesFor` lists. An unknown or deleted
+ * duplicates become tombstones) and, only with `applyPast` (the user's yes), the past transactions `otherMatchesFor` lists. An unknown or deleted
  * transaction, or a category that isn't a live subcategory, throws and writes nothing.
  */
 export async function commitRecategorization(
@@ -242,7 +242,7 @@ export async function commitRecategorization(
   } catch (error) {
     return abortWith(tx, error); // a blank merchant can't have a learned rule
   }
-  const past = applyToPast(pastMatchesFor(target, categoryId, storedTransactions), categoryId);
+  const past = applyToPast(otherMatchesFor(target, categoryId, storedTransactions), categoryId);
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
   const duplicates = new Set(learned.deletedRuleIds);
   const written = {
