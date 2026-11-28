@@ -2,7 +2,7 @@
 import { DEFAULT_RULES } from '../categorize/default-rules';
 import { deleteCategory, type CategoryDeletion } from '../categorize/edit';
 import { applyToPast, pastMatchesFor, recategorize } from '../categorize/learn';
-import { recategorizeAll } from '../categorize/rules';
+import { recategorizeAll, ruleMatcher } from '../categorize/rules';
 import { DEFAULT_CATEGORIES } from '../categorize/tree';
 import type { Category, Rule } from '../domain/category';
 import type { Transaction } from '../domain/transaction';
@@ -19,7 +19,7 @@ async function abortWith(tx: { abort(): void; done: Promise<void> }, error: unkn
 export interface Seed {
   categories: Category[];
   rules: Rule[];
-  /** Live uncategorized, non-manual stored rows the seeded rules now match, with their category. */
+  /** Live uncategorized, non-manual stored rows a seeded rule now decides, with its category. */
   transactions: Stored<Transaction>[];
 }
 
@@ -27,13 +27,15 @@ export interface Seed {
  * What seeding writes, given every stored category and rule (tombstones included): each default whose fixed id
  * isn't stored yet, so a renamed default stays renamed, a deleted one stays deleted, and a later app version can
  * add new defaults. A missing default whose parent category or rule target isn't live (the user deleted it) is
- * skipped, so seeding never points to a deleted category. When rules are added, the live uncategorized rows they
- * match get their category (`recategorizeAll` with the seeded rules only): seeding fills gaps and never overrides
- * a category already decided. `transactions` reads the stored rows, only in that case.
+ * skipped, so seeding never points to a deleted category. When rules are added, a live uncategorized, non-manual
+ * row gets a category only when a seeded rule wins over all live rules: seeding fills gaps, never overrides a
+ * decided category, and never fills a row a higher-priority rule (e.g. a learned rule answered "no") leaves alone.
+ * Known limit: a row the user sent to Uncategorized by deleting its category looks like a gap. `transactions`
+ * reads the stored rows, only when rules are added.
  */
 export async function planSeed(
   storedCategories: readonly Stored<Category>[],
-  storedRules: readonly { id: string }[],
+  storedRules: readonly Stored<Rule>[],
   transactions: () => Promise<Stored<Transaction>[]>,
 ): Promise<Seed> {
   const stored = new Set(storedCategories.map((c) => c.id));
@@ -47,8 +49,13 @@ export async function planSeed(
   const ruleIds = new Set(storedRules.map((r) => r.id));
   const rules = DEFAULT_RULES.filter((r) => !ruleIds.has(r.id) && live.has(r.categoryId));
   if (rules.length === 0) return { categories, rules, transactions: [] };
-  const uncategorized = (await transactions()).filter((t) => isLive(t) && t.categoryId === undefined);
-  return { categories, rules, transactions: recategorizeAll(uncategorized, rules) };
+  const seeded = new Set(rules.map((r) => r.id));
+  const match = ruleMatcher([...storedRules.filter(isLive), ...rules]);
+  const filled = (await transactions()).flatMap((t) => {
+    const rule = isLive(t) && t.categoryId === undefined && t.categorySource !== 'manual' ? match(t.merchant) : undefined;
+    return rule && seeded.has(rule.id) ? [{ ...t, categoryId: rule.categoryId, categorySource: 'rule' as const }] : [];
+  });
+  return { categories, rules, transactions: filled };
 }
 
 /**
