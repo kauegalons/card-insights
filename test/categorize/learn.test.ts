@@ -75,6 +75,19 @@ describe('recategorize', () => {
     expect(rule).toEqual({ ...existing, categoryId: RESTAURANT });
   });
 
+  it('with two user rules sharing the pattern (two offline devices, a restore), updates the first by priority then id and deletes the other', () => {
+    const pattern = learnedRulePattern('Cafe Exemplo');
+    const a: Rule = { id: 'rule-b', match: 'regex', pattern, categoryId: BAKERY, priority: LEARNED_RULE_PRIORITY, origin: 'user' };
+    const b: Rule = { id: 'rule-a', match: 'regex', pattern, categoryId: GROCERIES, priority: LEARNED_RULE_PRIORITY, origin: 'user' };
+    const result = recategorize(row('t1', 'Cafe Exemplo'), RESTAURANT, [...DEFAULT_RULES, a, b], fixedId);
+    expect(result.rule).toEqual({ ...b, categoryId: RESTAURANT });
+    expect(result.deletedRuleIds).toEqual(['rule-b']);
+  });
+
+  it('deletes no rule when the merchant has at most one', () => {
+    expect(recategorize(row('t1', 'Cafe Exemplo'), RESTAURANT, DEFAULT_RULES, fixedId).deletedRuleIds).toEqual([]);
+  });
+
   it('does not reuse a rule of another merchant or a default rule', () => {
     const other: Rule = { id: 'rule-other', match: 'regex', pattern: learnedRulePattern('Cafe Exemplo Filial'), categoryId: BAKERY, priority: 50, origin: 'user' };
     const { rule } = recategorize(row('t1', 'Cafe Exemplo'), RESTAURANT, [...DEFAULT_RULES, other], fixedId);
