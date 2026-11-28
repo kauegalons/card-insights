@@ -1,4 +1,5 @@
 /** Record checks for a backup being restored (spec v1 §7): the rules the domain enforces, per store. */
+import { validateRule } from '../categorize/rules';
 import { parseIsoDate } from '../domain/date';
 import { TRANSACTION_KINDS } from '../domain/transaction';
 import { isDeviceLocalSetting, type DeviceLocalSettingKey, type SettingKey, type StoreName, type SyncedStoreName } from './db';
@@ -79,5 +80,13 @@ export function validateRecord(store: StoreName, record: unknown, where: string)
   for (const [field, check] of Object.entries(fields)) {
     const expected = check(record[field]);
     if (expected !== undefined) throw new Error(`${where}.${field} must be ${expected} (got ${show(record[field])})`);
+  }
+  if (store === 'rules') {
+    try {
+      validateRule(record as Parameters<typeof validateRule>[0]); // fields checked above
+    } catch (error) {
+      // Names the field, like the checks above, and keeps validateRule's reason.
+      throw new Error(`${where}.pattern must be a valid rule pattern (got ${show(record.pattern)}: ${(error as Error).message})`);
+    }
   }
 }
