@@ -5,9 +5,36 @@ import type { Transaction } from '../domain/transaction';
 
 type Matcher = (normalizedMerchant: string) => boolean;
 
+/** Rules test at most this many characters of the normalized merchant, bounding the work of any regex. */
+export const MAX_MATCHED_MERCHANT_LENGTH = 200;
+
+const QUANTIFIER = /[+*]|\{\d*,/;
+
+/**
+ * Whether a quantified group has a quantified body, `(a+)+` or `(\w+\s?)*`: the shape behind catastrophic
+ * backtracking (ReDoS). Escapes and character classes count as one plain character; groups are folded from the
+ * innermost out, so `((ab)+c)+` is caught too. Conservative: it may reject a harmless pattern, never the reverse
+ * for this shape.
+ */
+function hasNestedQuantifier(pattern: string): boolean {
+  let rest = pattern.replace(/\\./g, '_').replace(/\[[^\]]*\]/g, '_');
+  for (;;) {
+    let nested = false;
+    const folded = rest.replace(/\(([^()]*)\)([+*]|\{\d*,)?/g, (_group, body: string, quantifier: string | undefined) => {
+      const quantified = QUANTIFIER.test(body);
+      if (quantified && quantifier !== undefined) nested = true;
+      return quantified || quantifier !== undefined ? '_+' : '_'; // keeps a repetition visible to the outer group
+    });
+    if (nested) return true;
+    if (folded === rest) return false;
+    rest = folded;
+  }
+}
+
 /**
  * The rule's test over a normalized merchant. Both sides drop accents; `contains` also ignores case and spacing,
- * `regex` uses the `i` flag. Throws `Invalid regular expression "<pattern>": <reason>` for a bad regex.
+ * `regex` uses the `i` flag. Throws `Invalid regular expression "<pattern>": <reason>` for a bad regex and
+ * `Rule pattern has a nested quantifier: "<pattern>"` for one that could hang (see `hasNestedQuantifier`).
  */
 function compile(rule: Pick<Rule, 'match' | 'pattern'>): Matcher {
   if (rule.match === 'contains') {
@@ -20,6 +47,7 @@ function compile(rule: Pick<Rule, 'match' | 'pattern'>): Matcher {
   } catch (error) {
     throw new Error(`Invalid regular expression "${rule.pattern}": ${(error as Error).message}`);
   }
+  if (hasNestedQuantifier(rule.pattern)) throw new Error(`Rule pattern has a nested quantifier: "${rule.pattern}"`);
   return (merchant) => regex.test(merchant);
 }
 
@@ -33,24 +61,36 @@ export function validateRule(rule: Pick<Rule, 'match' | 'pattern' | 'priority'>)
 /** Rule order: ascending `priority`, ties by `id`, so every device picks the same rule. */
 export const byPriorityThenId = (a: Rule, b: Rule): number => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+export interface InvalidRule {
+  rule: Rule;
+  /** Why it failed `validateRule`'s checks, e.g. `Invalid regular expression "(": …`. */
+  error: string;
+}
+
+/** Finds the rule for a merchant; `invalid` lists the stored rules it skipped, in rule order, for the UI to show. */
+export type RuleMatcher = ((merchant: string) => Rule | undefined) & { invalid: InvalidRule[] };
+
 /**
- * Compiles `rules` once and returns the first that matches a merchant, by ascending `priority` then `id` (so every
- * device picks the same rule), or undefined. A stored rule that fails to compile throws `Rule <id>: …`.
+ * Compiles `rules` once and returns the first that matches a merchant (its first `MAX_MATCHED_MERCHANT_LENGTH`
+ * normalized characters), by ascending `priority` then `id` (so every device picks the same rule), or undefined. A
+ * stored rule that fails to compile (one synced or restored without `validateRule`) is skipped and reported in
+ * `invalid`, so one bad rule never blocks an import.
  */
-export function ruleMatcher(rules: readonly Rule[]): (merchant: string) => Rule | undefined {
-  const compiled = [...rules]
-    .sort(byPriorityThenId)
-    .map((rule) => {
-      try {
-        return { rule, test: compile(rule) };
-      } catch (error) {
-        throw new Error(`Rule ${rule.id}: ${(error as Error).message}`);
-      }
-    });
-  return (merchant) => {
-    const normalized = normalizeMerchant(merchant);
+export function ruleMatcher(rules: readonly Rule[]): RuleMatcher {
+  const compiled: { rule: Rule; test: Matcher }[] = [];
+  const invalid: InvalidRule[] = [];
+  for (const rule of [...rules].sort(byPriorityThenId)) {
+    try {
+      compiled.push({ rule, test: compile(rule) });
+    } catch (error) {
+      invalid.push({ rule, error: (error as Error).message });
+    }
+  }
+  const match = (merchant: string) => {
+    const normalized = normalizeMerchant(merchant).slice(0, MAX_MATCHED_MERCHANT_LENGTH);
     return compiled.find(({ test }) => test(normalized))?.rule;
   };
+  return Object.assign(match, { invalid });
 }
 
 type CategoryFields = Pick<Transaction, 'categoryId' | 'categorySource'>;
