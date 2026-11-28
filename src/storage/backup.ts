@@ -71,10 +71,35 @@ function parse(backup: unknown): BackupData {
       if (!Array.isArray(records)) throw new Error(`data.${name} must be an array`);
       records.forEach((record: unknown, i) => validateRecord(name, record, `data.${name}[${i}]`));
     }
-    return data as unknown as BackupData;
+    const valid = data as unknown as BackupData;
+    checkReferences(valid);
+    return valid;
   } catch (error) {
     throw new Error(`Invalid backup: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+/**
+ * Checks references between live records, as the app keeps them (spec v1 §5): a subcategory's parent is a live
+ * top-level category, a rule targets a live subcategory, a transaction's category is live. Tombstones are skipped.
+ * Throws `data.<store>[i].<field> must be … (got …)`.
+ */
+function checkReferences(data: BackupData): void {
+  const live = data.categories.filter((c) => c.deletedAt === undefined);
+  const ids = new Set(live.map((c) => c.id));
+  const topLevel = new Set(live.filter((c) => c.parentId === undefined).map((c) => c.id));
+  const subcategories = new Set(live.filter((c) => c.parentId !== undefined).map((c) => c.id));
+  const check = <R extends { deletedAt?: string }, K extends keyof R & string>(
+    store: string, field: K, records: readonly R[], valid: (value: R[K]) => boolean, expected: string,
+  ) =>
+    records.forEach((record, i) => {
+      if (record.deletedAt === undefined && !valid(record[field])) {
+        throw new Error(`data.${store}[${i}].${field} must be ${expected} (got ${JSON.stringify(record[field])})`);
+      }
+    });
+  check('categories', 'parentId', data.categories, (v) => v === undefined || topLevel.has(v), 'a live top-level category');
+  check('rules', 'categoryId', data.rules, (v) => subcategories.has(v), 'a live subcategory');
+  check('transactions', 'categoryId', data.transactions, (v) => v === undefined || ids.has(v), 'a live category');
 }
 
 /** The newest `updatedAt` among the synced records, if any. */

@@ -15,12 +15,14 @@ function find(categories: readonly Category[], id: string): Category {
   return category;
 }
 
+/** How sibling names compare: trimmed, ignoring case and accents. */
+export const nameKey = (name: string): string => stripAccents(name.trim()).toLowerCase();
+
 /** The trimmed name; throws if blank or if a sibling (same parent, other id) has it, ignoring case and accents. */
 function checkName(categories: readonly Category[], name: string, parentId: string | undefined, selfId?: string): string {
   const trimmed = name.trim();
   if (trimmed === '') throw new Error('Category name must not be empty');
-  const key = (text: string) => stripAccents(text).toLowerCase();
-  if (categories.some((c) => c.parentId === parentId && c.id !== selfId && key(c.name) === key(trimmed))) {
+  if (categories.some((c) => c.parentId === parentId && c.id !== selfId && nameKey(c.name) === nameKey(trimmed))) {
     throw new Error(`A category named "${trimmed}" already exists there`);
   }
   return trimmed;
@@ -48,6 +50,31 @@ export function renameCategory(categories: readonly Category[], id: string, name
 
 type Categorized = Pick<Transaction, 'id' | 'categoryId' | 'categorySource'>;
 
+/** The category `id` and, for a top-level one, its subcategories. */
+function deletedSet(categories: readonly Category[], id: string): Set<string> {
+  find(categories, id);
+  return new Set([id, ...categories.filter((c) => c.parentId === id).map((c) => c.id)]);
+}
+
+/**
+ * What deleting category `id` would touch, for the confirmation (spec v1 §5): how many of `transactions` and
+ * `rules` point to it or to its subcategories, and those subcategories. Callers pass live records.
+ */
+export function deletionImpact(
+  categories: readonly Category[],
+  transactions: readonly Pick<Transaction, 'categoryId'>[],
+  rules: readonly Pick<Rule, 'categoryId'>[],
+  id: string,
+): { transactions: number; rules: number; subcategories: Category[] } {
+  const deleted = deletedSet(categories, id);
+  const hit = (r: { categoryId?: string | undefined }) => r.categoryId !== undefined && deleted.has(r.categoryId);
+  return {
+    transactions: transactions.filter(hit).length,
+    rules: rules.filter(hit).length,
+    subcategories: categories.filter((c) => c.parentId === id),
+  };
+}
+
 export interface CategoryDeletion<T> {
   /** The category and, for a top-level one, its subcategories. */
   deletedIds: string[];
@@ -71,8 +98,7 @@ export function deleteCategory<T extends Categorized>(
   id: string,
   target: string,
 ): CategoryDeletion<T> {
-  find(categories, id);
-  const deleted = new Set([id, ...categories.filter((c) => c.parentId === id).map((c) => c.id)]);
+  const deleted = deletedSet(categories, id);
   const targetCategory = categories.find((c) => c.id === target);
   if (target !== UNCATEGORIZED && (targetCategory?.parentId === undefined || deleted.has(target))) {
     throw new Error(`Target ${target} must be a subcategory that is not being deleted, or "${UNCATEGORIZED}"`);

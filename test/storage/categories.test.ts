@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RULES } from '../../src/categorize/default-rules';
 import { UNCATEGORIZED } from '../../src/categorize/edit';
 import { DEFAULT_CATEGORIES } from '../../src/categorize/tree';
-import { commitCategoryDeletion, seedDefaults } from '../../src/storage/categories';
+import { commitCategoryDeletion, seedDefaults, undoCategoryDeletion } from '../../src/storage/categories';
 import { openDatabase, type Db } from '../../src/storage/db';
 import { createRepository } from '../../src/storage/repository';
 import { ensureDeviceId, getSetting } from '../../src/storage/settings';
@@ -15,6 +15,13 @@ async function open(name?: string): Promise<Db> {
 }
 
 const ids = (records: readonly { id: string }[]) => records.map((r) => r.id).sort();
+
+/** Every stored record (tombstones included) of the stores a deletion touches. */
+const exportAll = async (db: Db) => ({
+  categories: await db.getAll('categories'),
+  transactions: await db.getAll('transactions'),
+  rules: await db.getAll('rules'),
+});
 
 describe('seedDefaults', () => {
   it('writes the default tree and rules, live, with one stamp', async () => {
@@ -78,6 +85,30 @@ describe('seedDefaults', () => {
 
     expect(await db.get('categories', fuel.id)).toBeUndefined();
     for (const r of fuelRules) expect(await db.get('rules', r.id)).toBeUndefined();
+    db.close();
+  });
+});
+
+describe('seedDefaults and names the user already uses', () => {
+  it('skips a default whose name a live sibling already has (ignoring case and accents), and what hangs from it', async () => {
+    const db = await open();
+    const categories = createRepository(db, 'categories');
+    await categories.put({ id: 'my-transport', name: '  transporte ' });
+    await categories.put({ id: 'my-food', name: 'ALIMENTACAO' });
+    await categories.put({ id: 'my-bakery', name: 'padária', parentId: 'my-food' });
+
+    await seedDefaults(db);
+
+    const live = await categories.list();
+    const named = (name: string) => live.filter((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    expect(named('transporte')).toHaveLength(1);
+    expect(named('alimentação')).toHaveLength(0);
+    const transport = DEFAULT_CATEGORIES.find((c) => c.name === 'Transporte');
+    const fuel = DEFAULT_CATEGORIES.find((c) => c.name === 'Combustível');
+    expect(await categories.get(transport?.id ?? '')).toBeUndefined();
+    expect(await categories.get(fuel?.id ?? '')).toBeUndefined();
+    expect((await createRepository(db, 'rules').list()).some((r) => r.categoryId === fuel?.id)).toBe(false);
+    expect(live.some((c) => c.name === 'Saúde')).toBe(true);
     db.close();
   });
 });
@@ -161,6 +192,113 @@ describe('commitCategoryDeletion', () => {
     expect(result.transactions).toEqual([await transactions.get('t1'), await transactions.get('t2')]);
     expect(result.rules).toEqual([await createRepository(db, 'rules').get('r1')]);
     expect(result.rules[0]?.updatedAt).toBe(at);
+    db.close();
+  });
+
+  it('undo restores every record the deletion changed, in one stamp', async () => {
+    const db = await setup();
+    const before = await exportAll(db);
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'food', UNCATEGORIZED, time.clock);
+    time.set('2026-11-25T11:00:00.000Z');
+
+    await undoCategoryDeletion(db, result.undo, time.clock);
+
+    const after = await exportAll(db);
+    const at = stamped('2026-11-25T11:00:00.000Z');
+    for (const store of ['categories', 'transactions', 'rules'] as const) {
+      const changed = new Set([...result.undo[store].map((r) => r.id)]);
+      expect(changed.size).toBeGreaterThan(0);
+      for (const record of after[store]) {
+        const old = before[store].find((r) => r.id === record.id);
+        expect(record).toEqual(changed.has(record.id) ? { ...old, ...at } : old);
+      }
+    }
+    await expectNoOrphans(db);
+    db.close();
+  });
+
+  it('undo writes nothing when a record changed after the deletion', async () => {
+    const db = await setup();
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'bakery', 'grocery', time.clock);
+    time.set('2026-11-25T11:00:00.000Z');
+    await createRepository(db, 'transactions', time.clock).put({ ...transaction('t1'), categoryId: 'pharmacy' });
+    const snapshot = await exportAll(db);
+    const stampBefore = await getSetting(db, 'lastStampAt');
+
+    await expect(undoCategoryDeletion(db, result.undo, time.clock)).rejects.toThrow('Cannot undo: transactions t1 changed after the deletion');
+
+    expect(await exportAll(db)).toEqual(snapshot);
+    expect(await getSetting(db, 'lastStampAt')).toBe(stampBefore);
+    db.close();
+  });
+
+  it('undo of a move to a subcategory puts transactions and rules back, a manual choice still manual', async () => {
+    const db = await setup();
+    const before = await exportAll(db);
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'bakery', 'grocery', time.clock);
+    expect(result.undo.rules.map((r) => r.id)).toEqual(['r1']);
+    time.set('2026-11-25T11:00:00.000Z');
+
+    await undoCategoryDeletion(db, result.undo, time.clock);
+
+    const transactions = createRepository(db, 'transactions');
+    expect(await transactions.get('t1')).toMatchObject({ categoryId: 'bakery', categorySource: 'rule' });
+    expect(await transactions.get('t2')).toMatchObject({ categoryId: 'bakery', categorySource: 'manual' });
+    expect(await createRepository(db, 'rules').get('r1')).toEqual({ ...before.rules.find((r) => r.id === 'r1'), ...stamped('2026-11-25T11:00:00.000Z') });
+    expect(await createRepository(db, 'categories').get('bakery')).toBeDefined();
+    db.close();
+  });
+
+  const rejectsUndo = async (db: Db, undo: Parameters<typeof undoCategoryDeletion>[1], message: string) => {
+    const snapshot = await exportAll(db);
+    const stampBefore = await getSetting(db, 'lastStampAt');
+    await expect(undoCategoryDeletion(db, undo, fakeClock('2026-11-26T10:00:00.000Z').clock)).rejects.toThrow(message);
+    expect(await exportAll(db)).toEqual(snapshot);
+    expect(await getSetting(db, 'lastStampAt')).toBe(stampBefore);
+  };
+
+  it('undo writes nothing when a category or rule changed after the deletion, or a record is gone', async () => {
+    const db = await setup();
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'bakery', 'grocery', time.clock);
+    time.set('2026-11-25T11:00:00.000Z');
+    await createRepository(db, 'rules', time.clock).put({ ...rule('r1'), categoryId: 'pharmacy' });
+    await rejectsUndo(db, result.undo, 'Cannot undo: rules r1 changed after the deletion');
+    await db.delete('categories', 'bakery');
+    await rejectsUndo(db, result.undo, 'Cannot undo: categories bakery changed after the deletion');
+    db.close();
+  });
+
+  it('undo writes nothing when another device wrote a record with the same updatedAt', async () => {
+    const db = await setup();
+    const result = await commitCategoryDeletion(db, 'bakery', 'grocery', fakeClock('2026-11-25T10:00:00.000Z').clock);
+    const t1 = await db.get('transactions', 't1');
+    if (!t1) throw new Error('missing t1');
+    await db.put('transactions', { ...t1, categoryId: 'pharmacy', updatedBy: 'device-2' });
+    await rejectsUndo(db, result.undo, 'Cannot undo: transactions t1 changed after the deletion');
+    db.close();
+  });
+
+  it('undo writes nothing when the parent of a restored subcategory was deleted since', async () => {
+    const db = await setup();
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'bakery', UNCATEGORIZED, time.clock);
+    time.set('2026-11-25T11:00:00.000Z');
+    await commitCategoryDeletion(db, 'food', UNCATEGORIZED, time.clock);
+    await rejectsUndo(db, result.undo, 'Cannot undo: the parent food of bakery is not a live category');
+    db.close();
+  });
+
+  it('undo writes nothing when a live sibling took the name since', async () => {
+    const db = await setup();
+    const time = fakeClock('2026-11-25T10:00:00.000Z');
+    const result = await commitCategoryDeletion(db, 'health', UNCATEGORIZED, time.clock);
+    time.set('2026-11-25T11:00:00.000Z');
+    await createRepository(db, 'categories', time.clock).put({ id: 'health-2', name: ' categoria HEALTH' });
+    await rejectsUndo(db, result.undo, 'Cannot undo: a category named "Categoria health" already exists there');
     db.close();
   });
 

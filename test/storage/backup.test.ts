@@ -160,9 +160,24 @@ describe('restoreBackup', () => {
     ['a malformed installment', (b) => firstTransaction(b, { installment: { n: 7, total: 6 } }), 'Invalid backup: data.transactions[0].installment must be { n, total } with 1 ≤ n ≤ total (got {"n":7,"total":6})'],
     ['a non-string deletedAt', (b) => firstTransaction(b, { deletedAt: 1 }), 'Invalid backup: data.transactions[0].deletedAt must be an ISO timestamp (got 1)'],
     ['a rule whose regex does not compile', (b) => ({ ...b, data: { ...b.data, rules: [{ ...rule('r'), match: 'regex', pattern: '(', ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.rules[0].pattern must be a valid rule pattern (got "(": Invalid regular expression "(":'],
+    ['a live rule whose category is not a live category', (b) => ({ ...b, data: { ...b.data, rules: [{ ...rule('r'), categoryId: 'gone', ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.rules[0].categoryId must be a live subcategory (got "gone")'],
+    ['a live rule whose category is a tombstone', (b) => ({ ...b, data: { ...b.data, categories: b.data.categories.map((c) => ({ ...c, deletedAt: c.updatedAt })) } }), 'Invalid backup: data.rules[0].categoryId must be a live subcategory (got "bakery")'],
+    ['a live rule whose category is top-level', (b) => ({ ...b, data: { ...b.data, rules: [{ ...rule('r'), categoryId: 'food', ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.rules[0].categoryId must be a live subcategory (got "food")'],
+    ['a live transaction whose category is not live', (b) => firstTransaction(b, { categoryId: 'gone', categorySource: 'rule' }), 'Invalid backup: data.transactions[0].categoryId must be a live category (got "gone")'],
+    ['a live subcategory whose parent is not a live top-level category', (b) => ({ ...b, data: { ...b.data, categories: [...b.data.categories, { ...category('orphan', 'gone'), ...stamped('2026-11-24T10:00:00.000Z') }] } }), 'Invalid backup: data.categories[2].parentId must be a live top-level category (got "gone")'],
     ['an unknown setting', (b) => settings(b, { key: 'theme', value: 'dark' }), 'Invalid backup: data.settings[0].key must be one of "monthlyIncomeCents", "statementClosingDay", "demo", "lastBackupAt" (got "theme")'],
     ['a closing day out of range', (b) => settings(b, { key: 'statementClosingDay', value: 40 }), 'Invalid backup: data.settings[0].value must be a day of the month, 1 to 31 (got 40)'],
   ];
+
+  it('restores a tombstoned rule without validating its pattern or category', async () => {
+    const db = await openDatabase();
+    await seed(db);
+    const backup = await exportBackup(db);
+    const tombstone = { ...rule('old'), match: 'regex', pattern: '(', categoryId: 'gone', ...stamped('2026-11-24T10:00:00.000Z'), deletedAt: '2026-11-24T10:00:00.000Z' };
+    await restoreBackup(db, { ...backup, data: { ...backup.data, rules: [...backup.data.rules, tombstone] } });
+    expect(await db.get('rules', 'old')).toEqual(tombstone);
+    db.close();
+  });
 
   it.each(invalid)('rejects %s and keeps the current data', async (_name, corrupt, message) => {
     const db = await openDatabase();

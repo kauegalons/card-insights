@@ -81,7 +81,8 @@ export function validateRecord(store: StoreName, record: unknown, where: string)
     const expected = check(record[field]);
     if (expected !== undefined) throw new Error(`${where}.${field} must be ${expected} (got ${show(record[field])})`);
   }
-  if (store === 'rules') {
+  if (store === 'rules' && record.deletedAt === undefined) {
+    // A tombstone is never matched, so its pattern doesn't matter.
     try {
       validateRule(record as Parameters<typeof validateRule>[0]); // fields checked above
     } catch (error) {
