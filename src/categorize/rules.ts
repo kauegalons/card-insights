@@ -69,3 +69,17 @@ export function categorize<T extends Pick<Transaction, 'merchant'> & CategoryFie
     return (rule ? { ...rest, categoryId: rule.categoryId, categorySource: 'rule' } : rest) as T & CategoryFields;
   });
 }
+
+/**
+ * Re-runs `rules` over stored rows (spec v1 §5): the non-manual rows whose category the rules change, with the
+ * rules' decision as `categorize` gives it. Rows that already agree, and manual rows, are left out.
+ */
+export function recategorizeAll<T extends Pick<Transaction, 'merchant'> & CategoryFields>(
+  rows: readonly T[],
+  rules: readonly Rule[],
+): (T & CategoryFields)[] {
+  const automatic = rows.filter((row) => row.categorySource !== 'manual');
+  return categorize(automatic, rules).filter(
+    (row, i) => row.categoryId !== automatic[i]?.categoryId || row.categorySource !== automatic[i]?.categorySource,
+  );
+}

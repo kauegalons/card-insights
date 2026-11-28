@@ -2,7 +2,8 @@
 import type { StoreValue } from 'idb';
 import { categorize } from '../categorize/rules';
 import type { Transaction } from '../domain/transaction';
-import { runInTransaction, systemClock, type Clock, type Db, type ImportRecord, type Schema, type SyncFields, type SyncedStoreName } from './db';
+import { planSeed } from './categories';
+import { isLive, runInTransaction, systemClock, type Clock, type Db, type ImportRecord, type Schema, type SyncFields, type SyncedStoreName } from './db';
 import { nextStamp } from './stamp';
 
 /** A synced store's record without its sync fields: what callers write. */
@@ -21,7 +22,7 @@ export interface Repository<S extends SyncedStoreName> {
   changedSince(timestamp: string): Promise<StoreValue<Schema, S>[]>;
 }
 
-export const isLive = (record: { deletedAt?: string }): boolean => record.deletedAt === undefined;
+export { isLive };
 
 /** `record` without any sync fields passed in, so the stamp always comes from the repository. */
 function withoutSyncFields<T extends object>(record: T): Omit<T, keyof SyncFields> {
@@ -72,23 +73,29 @@ export interface ImportCommit {
 }
 
 /**
- * Saves an import in one IndexedDB transaction (spec v1 §8.1), all or nothing, with one stamp: its record, its
- * new transactions categorized by the live stored rules (`categorize`: learned rules first, manual rows kept), and
- * the stored ones it moves to its statement (an unknown or deleted id is skipped). A non-manual category set by the
- * caller is replaced by the rules' decision (or removed on no match), so `seedDefaults` must run before an import.
+ * Saves an import in one IndexedDB transaction (spec v1 §8.1), all or nothing, with one stamp: the missing default
+ * categories and rules (`planSeed`, so an import never runs without them), its record, its new transactions
+ * categorized by the live rules (`categorize`: learned rules first, manual rows kept), and the stored ones it moves
+ * to its statement (an unknown or deleted id is skipped). A non-manual category set by the caller is replaced by
+ * the rules' decision (or removed on no match).
  */
 export async function commitImport(db: Db, commit: ImportCommit, clock: Clock = systemClock): Promise<void> {
-  const tx = db.transaction(['transactions', 'imports', 'rules', 'settings'], 'readwrite');
+  const tx = db.transaction(['transactions', 'imports', 'rules', 'categories', 'settings'], 'readwrite');
   const transactions = tx.objectStore('transactions');
-  const rules = (await tx.objectStore('rules').getAll()).filter(isLive);
-  const added = categorize(commit.transactions, rules);
+  const [storedCategories, storedRules] = await Promise.all([tx.objectStore('categories').getAll(), tx.objectStore('rules').getAll()]);
+  const seed = await planSeed(storedCategories, storedRules, () => transactions.getAll());
+  const added = categorize(commit.transactions, [...storedRules.filter(isLive), ...seed.rules]);
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
+  const filled = new Map(seed.transactions.map((t) => [t.id, t]));
   const moved = (await Promise.all((commit.moveToStatement ?? []).map((id) => transactions.get(id))))
     .filter((t): t is NonNullable<typeof t> => t !== undefined && isLive(t))
-    .map((t) => ({ ...t, statementId: commit.record.statementId, ...stamp }));
+    .map((t) => ({ ...(filled.get(t.id) ?? t), statementId: commit.record.statementId }));
+  for (const t of moved) filled.delete(t.id);
   await runInTransaction(tx, [
+    ...seed.categories.map((c) => () => tx.objectStore('categories').put({ ...c, ...stamp })),
+    ...seed.rules.map((r) => () => tx.objectStore('rules').put({ ...r, ...stamp })),
     () => tx.objectStore('imports').put({ ...withoutSyncFields(commit.record), ...stamp }),
     ...added.map((t) => () => transactions.put({ ...withoutSyncFields(t), ...stamp })),
-    ...moved.map((t) => () => transactions.put(t)),
+    ...[...filled.values(), ...moved].map((t) => () => transactions.put({ ...t, ...stamp })),
   ]);
 }

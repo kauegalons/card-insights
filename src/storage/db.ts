@@ -21,6 +21,8 @@ export interface SyncFields {
 }
 export type Stored<T> = T & SyncFields;
 
+export const isLive = (record: { deletedAt?: string }): boolean => record.deletedAt === undefined;
+
 /** One import, never the file content. */
 export interface ImportRecord {
   id: string;
