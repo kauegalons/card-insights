@@ -6,7 +6,7 @@ import { recategorizeAll, ruleMatcher } from '../categorize/rules';
 import { DEFAULT_CATEGORIES } from '../categorize/tree';
 import type { Category, Rule } from '../domain/category';
 import type { Transaction } from '../domain/transaction';
-import { isLive, runInTransaction, systemClock, type Clock, type Db, type Stored } from './db';
+import { isLive, runInTransaction, systemClock, type Clock, type Db, type Stored, type SyncFields } from './db';
 import { nextStamp } from './stamp';
 
 /** Aborts `tx` (nothing is written) and rethrows `error`, the cause. */
@@ -28,7 +28,8 @@ export interface Seed {
  * isn't stored yet, so a renamed default stays renamed, a deleted one stays deleted, and a later app version can
  * add new defaults. A missing default whose parent category or rule target isn't live (the user deleted it) is
  * skipped, so seeding never points to a deleted category; so is one whose name a live sibling already has (as
- * `createCategory` checks it), with what hangs from it, so seeding never makes two "Transporte". When rules are added, a live uncategorized, non-manual
+ * `createCategory` checks it), with what hangs from it, so seeding never makes two "Transporte". That check runs
+ * on every seed: if the user later renames or deletes their category, the default comes in then. When rules are added, a live uncategorized, non-manual
  * row gets a category only when a seeded rule wins over all live rules: seeding fills gaps, never overrides a
  * decided category, and never fills a row a higher-priority rule (e.g. a learned rule answered "no") leaves alone.
  * Known limit: a row the user sent to Uncategorized by deleting its category looks like a gap. `transactions`
@@ -104,7 +105,8 @@ export async function commitRecategorizeAll(db: Db, clock: Clock = systemClock):
 
 /** What `undoCategoryDeletion` needs: the deletion's stamp and every record it changed, as stored before it. */
 export interface CategoryDeletionUndo {
-  stamp: string;
+  /** The deletion's stamp: a record whose `updatedAt` or `updatedBy` differs was written again since. */
+  stamp: Pick<SyncFields, 'updatedAt' | 'updatedBy'>;
   categories: Stored<Category>[];
   transactions: Stored<Transaction>[];
   rules: Stored<Rule>[];
@@ -145,7 +147,7 @@ export async function commitCategoryDeletion(
   const movedRules = new Set(deletion.rules.map((r) => r.id));
   const movedTransactions = new Set(deletion.transactions.map((t) => t.id));
   const undo: CategoryDeletionUndo = {
-    stamp: stamp.updatedAt,
+    stamp,
     categories: storedCategories.filter((c) => isLive(c) && deletedCategories.has(c.id)),
     transactions: storedTransactions.filter((t) => isLive(t) && movedTransactions.has(t.id)),
     rules: storedRules.filter((r) => isLive(r) && (deletedRules.has(r.id) || movedRules.has(r.id))),
@@ -160,19 +162,45 @@ export async function commitCategoryDeletion(
 }
 
 /**
+ * Why `undo` can't be applied over the stored `categories` (all, tombstones included), or undefined: a record it
+ * restores was written again after the deletion (missing, or another stamp, from this device or another), a
+ * restored subcategory's parent is no longer live (it would come back orphaned), or a live sibling took a
+ * restored category's name since (two "Transporte").
+ */
+async function undoConflict(
+  undo: CategoryDeletionUndo,
+  current: (store: 'categories' | 'transactions' | 'rules', id: string) => Promise<SyncFields | undefined>,
+  categories: readonly Stored<Category>[],
+): Promise<string | undefined> {
+  for (const store of ['categories', 'transactions', 'rules'] as const) {
+    for (const record of undo[store]) {
+      const now = await current(store, record.id);
+      if (now?.updatedAt !== undo.stamp.updatedAt || now.updatedBy !== undo.stamp.updatedBy) {
+        return `${store} ${record.id} changed after the deletion`;
+      }
+    }
+  }
+  const restored = new Set(undo.categories.map((c) => c.id));
+  const live = categories.filter((c) => isLive(c) && !restored.has(c.id));
+  const liveIds = new Set([...live.map((c) => c.id), ...restored]);
+  for (const c of undo.categories) {
+    if (c.parentId !== undefined && !liveIds.has(c.parentId)) return `the parent ${c.parentId} of ${c.id} is not a live category`;
+    if (live.some((s) => s.parentId === c.parentId && nameKey(s.name) === nameKey(c.name))) {
+      return `a category named ${JSON.stringify(c.name)} already exists there`;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Undoes `commitCategoryDeletion` (spec v1 §5): writes back every record it changed, as it was, with a new stamp,
- * in one IndexedDB transaction, so sync sees the restore as newer than the deletion. If any of them was written
- * again after the deletion (its `updatedAt` is no longer the deletion's stamp), it throws
- * `Cannot undo: <store> <id> changed after the deletion` and writes nothing.
+ * in one IndexedDB transaction, so sync sees the restore as newer than the deletion. On a conflict (`undoConflict`)
+ * it throws `Cannot undo: <reason>` and writes nothing.
  */
 export async function undoCategoryDeletion(db: Db, undo: CategoryDeletionUndo, clock: Clock = systemClock): Promise<void> {
   const tx = db.transaction(['categories', 'transactions', 'rules', 'settings'], 'readwrite');
-  const stores = ['categories', 'transactions', 'rules'] as const;
-  for (const name of stores) {
-    const current = await Promise.all(undo[name].map((r) => tx.objectStore(name).get(r.id)));
-    const changed = undo[name].find((r, i) => current[i]?.updatedAt !== undo.stamp);
-    if (changed) return abortWith(tx, new Error(`Cannot undo: ${name} ${changed.id} changed after the deletion`));
-  }
+  const conflict = await undoConflict(undo, (store, id) => tx.objectStore(store).get(id), await tx.objectStore('categories').getAll());
+  if (conflict !== undefined) return abortWith(tx, new Error(`Cannot undo: ${conflict}`));
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
   await runInTransaction(tx, [
     ...undo.categories.map((c) => () => tx.objectStore('categories').put({ ...c, ...stamp })),
