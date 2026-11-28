@@ -1,6 +1,6 @@
 /** Category writes that span stores (spec v1 §5): seeding the defaults, deleting with reassignment, recategorizing. */
 import { DEFAULT_RULES } from '../categorize/default-rules';
-import { deleteCategory, type CategoryDeletion } from '../categorize/edit';
+import { deleteCategory, nameKey, type CategoryDeletion } from '../categorize/edit';
 import { applyToPast, pastMatchesFor, recategorize } from '../categorize/learn';
 import { recategorizeAll, ruleMatcher } from '../categorize/rules';
 import { DEFAULT_CATEGORIES } from '../categorize/tree';
@@ -27,7 +27,8 @@ export interface Seed {
  * What seeding writes, given every stored category and rule (tombstones included): each default whose fixed id
  * isn't stored yet, so a renamed default stays renamed, a deleted one stays deleted, and a later app version can
  * add new defaults. A missing default whose parent category or rule target isn't live (the user deleted it) is
- * skipped, so seeding never points to a deleted category. When rules are added, a live uncategorized, non-manual
+ * skipped, so seeding never points to a deleted category; so is one whose name a live sibling already has (as
+ * `createCategory` checks it), with what hangs from it, so seeding never makes two "Transporte". When rules are added, a live uncategorized, non-manual
  * row gets a category only when a seeded rule wins over all live rules: seeding fills gaps, never overrides a
  * decided category, and never fills a row a higher-priority rule (e.g. a learned rule answered "no") leaves alone.
  * Known limit: a row the user sent to Uncategorized by deleting its category looks like a gap. `transactions`
@@ -40,10 +41,13 @@ export async function planSeed(
 ): Promise<Seed> {
   const stored = new Set(storedCategories.map((c) => c.id));
   const live = new Set(storedCategories.filter(isLive).map((c) => c.id));
+  const siblingKey = (c: Category) => `${c.parentId ?? ''}/${nameKey(c.name)}`;
+  const names = new Set(storedCategories.filter(isLive).map(siblingKey));
   // DEFAULT_CATEGORIES lists each parent before its subcategories, so one pass sees the parents it seeds.
   const categories = DEFAULT_CATEGORIES.filter((c) => {
-    if (stored.has(c.id) || (c.parentId !== undefined && !live.has(c.parentId))) return false;
+    if (stored.has(c.id) || (c.parentId !== undefined && !live.has(c.parentId)) || names.has(siblingKey(c))) return false;
     live.add(c.id);
+    names.add(siblingKey(c));
     return true;
   });
   const ruleIds = new Set(storedRules.map((r) => r.id));
@@ -98,18 +102,27 @@ export async function commitRecategorizeAll(db: Db, clock: Clock = systemClock):
   return written;
 }
 
+/** What `undoCategoryDeletion` needs: the deletion's stamp and every record it changed, as stored before it. */
+export interface CategoryDeletionUndo {
+  stamp: string;
+  categories: Stored<Category>[];
+  transactions: Stored<Transaction>[];
+  rules: Stored<Rule>[];
+}
+
 /**
  * Deletes category `id` (with its subcategories if top-level) and moves what points to it to `target`, a
  * subcategory or `UNCATEGORIZED` (see `deleteCategory`), in one IndexedDB transaction with one stamp: reads and
  * writes together, so no transaction or rule is left pointing to a deleted category. Deletes are tombstones.
- * An invalid id or target throws and writes nothing. Returns the deletion with the moved records as stored.
+ * An invalid id or target throws and writes nothing. Returns the deletion with the moved records as stored, and
+ * `undo`, the records as they were, for `undoCategoryDeletion`.
  */
 export async function commitCategoryDeletion(
   db: Db,
   id: string,
   target: string,
   clock: Clock = systemClock,
-): Promise<CategoryDeletion<Stored<Transaction>> & { rules: Stored<Rule>[] }> {
+): Promise<CategoryDeletion<Stored<Transaction>> & { rules: Stored<Rule>[]; undo: CategoryDeletionUndo }> {
   const tx = db.transaction(['categories', 'transactions', 'rules', 'settings'], 'readwrite');
   const categories = tx.objectStore('categories');
   const transactions = tx.objectStore('transactions');
@@ -129,13 +142,43 @@ export async function commitCategoryDeletion(
     transactions: deletion.transactions.map((t) => ({ ...t, ...stamp })),
     rules: deletion.rules.map((r) => ({ ...r, ...stamp })),
   };
+  const movedRules = new Set(deletion.rules.map((r) => r.id));
+  const movedTransactions = new Set(deletion.transactions.map((t) => t.id));
+  const undo: CategoryDeletionUndo = {
+    stamp: stamp.updatedAt,
+    categories: storedCategories.filter((c) => isLive(c) && deletedCategories.has(c.id)),
+    transactions: storedTransactions.filter((t) => isLive(t) && movedTransactions.has(t.id)),
+    rules: storedRules.filter((r) => isLive(r) && (deletedRules.has(r.id) || movedRules.has(r.id))),
+  };
   await runInTransaction(tx, [
-    ...storedCategories.filter((c) => isLive(c) && deletedCategories.has(c.id)).map((c) => () => categories.put({ ...c, ...tombstone })),
+    ...undo.categories.map((c) => () => categories.put({ ...c, ...tombstone })),
     ...moved.transactions.map((t) => () => transactions.put(t)),
     ...moved.rules.map((r) => () => rules.put(r)),
-    ...storedRules.filter((r) => isLive(r) && deletedRules.has(r.id)).map((r) => () => rules.put({ ...r, ...tombstone })),
+    ...undo.rules.filter((r) => deletedRules.has(r.id)).map((r) => () => rules.put({ ...r, ...tombstone })),
   ]);
-  return { ...deletion, ...moved };
+  return { ...deletion, ...moved, undo };
+}
+
+/**
+ * Undoes `commitCategoryDeletion` (spec v1 §5): writes back every record it changed, as it was, with a new stamp,
+ * in one IndexedDB transaction, so sync sees the restore as newer than the deletion. If any of them was written
+ * again after the deletion (its `updatedAt` is no longer the deletion's stamp), it throws
+ * `Cannot undo: <store> <id> changed after the deletion` and writes nothing.
+ */
+export async function undoCategoryDeletion(db: Db, undo: CategoryDeletionUndo, clock: Clock = systemClock): Promise<void> {
+  const tx = db.transaction(['categories', 'transactions', 'rules', 'settings'], 'readwrite');
+  const stores = ['categories', 'transactions', 'rules'] as const;
+  for (const name of stores) {
+    const current = await Promise.all(undo[name].map((r) => tx.objectStore(name).get(r.id)));
+    const changed = undo[name].find((r, i) => current[i]?.updatedAt !== undo.stamp);
+    if (changed) return abortWith(tx, new Error(`Cannot undo: ${name} ${changed.id} changed after the deletion`));
+  }
+  const stamp = await nextStamp(tx.objectStore('settings'), clock);
+  await runInTransaction(tx, [
+    ...undo.categories.map((c) => () => tx.objectStore('categories').put({ ...c, ...stamp })),
+    ...undo.transactions.map((t) => () => tx.objectStore('transactions').put({ ...t, ...stamp })),
+    ...undo.rules.map((r) => () => tx.objectStore('rules').put({ ...r, ...stamp })),
+  ]);
 }
 
 /**

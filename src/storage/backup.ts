@@ -71,10 +71,22 @@ function parse(backup: unknown): BackupData {
       if (!Array.isArray(records)) throw new Error(`data.${name} must be an array`);
       records.forEach((record: unknown, i) => validateRecord(name, record, `data.${name}[${i}]`));
     }
-    return data as unknown as BackupData;
+    const valid = data as unknown as BackupData;
+    checkRuleTargets(valid);
+    return valid;
   } catch (error) {
     throw new Error(`Invalid backup: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+/** Throws `data.rules[i].categoryId must be a live category (got …)` for a live rule pointing nowhere. */
+function checkRuleTargets(data: BackupData): void {
+  const live = new Set(data.categories.filter((c) => c.deletedAt === undefined).map((c) => c.id));
+  data.rules.forEach((rule, i) => {
+    if (rule.deletedAt === undefined && !live.has(rule.categoryId)) {
+      throw new Error(`data.rules[${i}].categoryId must be a live category (got ${JSON.stringify(rule.categoryId)})`);
+    }
+  });
 }
 
 /** The newest `updatedAt` among the synced records, if any. */
