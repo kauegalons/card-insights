@@ -140,8 +140,8 @@ export async function commitCategoryDeletion(
 
 /**
  * Changes transaction `id` to `categoryId` (spec v1 §5, §8.2) in one IndexedDB transaction with one stamp: the
- * transaction as a manual choice, the learned rule for its merchant (`recategorize`, `newId` for a new rule) and,
- * only with `applyPast` (the user's yes), the past transactions `pastMatchesFor` lists. An unknown or deleted
+ * transaction as a manual choice, the learned rule for its merchant (`recategorize`, `newId` for a new rule; its
+ * duplicates become tombstones) and, only with `applyPast` (the user's yes), the past transactions `pastMatchesFor` lists. An unknown or deleted
  * transaction, or a category that isn't a live subcategory, throws and writes nothing.
  */
 export async function commitRecategorization(
@@ -151,7 +151,7 @@ export async function commitRecategorization(
   applyPast: boolean,
   clock: Clock = systemClock,
   newId?: () => string,
-): Promise<{ transaction: Stored<Transaction>; rule: Stored<Rule>; past: Stored<Transaction>[] }> {
+): Promise<{ transaction: Stored<Transaction>; rule: Stored<Rule>; past: Stored<Transaction>[]; deletedRuleIds: string[] }> {
   const tx = db.transaction(['categories', 'transactions', 'rules', 'settings'], 'readwrite');
   const transactions = tx.objectStore('transactions');
   const rules = tx.objectStore('rules');
@@ -173,7 +173,9 @@ export async function commitRecategorization(
   }
   const past = applyToPast(pastMatchesFor(target, categoryId, storedTransactions), categoryId);
   const stamp = await nextStamp(tx.objectStore('settings'), clock);
+  const duplicates = new Set(learned.deletedRuleIds);
   const written = {
+    deletedRuleIds: learned.deletedRuleIds,
     transaction: { ...learned.transaction, ...stamp },
     rule: { ...learned.rule, ...stamp },
     past: past.map((t) => ({ ...t, ...stamp })),
@@ -182,6 +184,7 @@ export async function commitRecategorization(
     () => transactions.put(written.transaction),
     () => rules.put(written.rule),
     ...written.past.map((t) => () => transactions.put(t)),
+    ...storedRules.filter((r) => isLive(r) && duplicates.has(r.id)).map((r) => () => rules.put({ ...r, ...stamp, deletedAt: stamp.updatedAt })),
   ]);
   return written;
 }
