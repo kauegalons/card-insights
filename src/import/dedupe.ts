@@ -1,4 +1,5 @@
 /** Dedupe by fingerprint and occurrence count: spec v1 §4, ADR 006. */
+import { normalizeMerchant } from '../domain/merchant';
 import type { Transaction } from '../domain/transaction';
 import type { ParsedRow } from './types';
 
@@ -34,11 +35,6 @@ export interface DedupeResult {
    * its name or the closing day, for rows stored under another one (e.g. a partial export's provisional id).
    */
   moveToStatement: string[];
-}
-
-/** Case-, accent- and spacing-insensitive merchant, so a cosmetic change doesn't create a new fingerprint. */
-function normalizeMerchant(merchant: string): string {
-  return merchant.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
 /** `date|normalizedMerchant|amountCents|n/total` (or `-` without installment). */
