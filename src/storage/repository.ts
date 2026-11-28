@@ -20,7 +20,7 @@ export interface Repository<S extends SyncedStoreName> {
   changedSince(timestamp: string): Promise<StoreValue<Schema, S>[]>;
 }
 
-const isLive = (record: { deletedAt?: string }): boolean => record.deletedAt === undefined;
+export const isLive = (record: { deletedAt?: string }): boolean => record.deletedAt === undefined;
 
 /** `record` without any sync fields passed in, so the stamp always comes from the repository. */
 function withoutSyncFields<T extends object>(record: T): Omit<T, keyof SyncFields> {

@@ -95,11 +95,8 @@ describe('commitCategoryDeletion', () => {
 
     const at = '2026-11-25T10:00:00.000Z';
     const changed = await createRepository(db, 'categories').changedSince('2026-11-24T23:00:00.000Z');
-    expect(changed.map((c) => [c.id, c.deletedAt])).toEqual([
-      ['food', at],
-      ['bakery', at],
-      ['grocery', at],
-    ]);
+    expect(ids(changed)).toEqual(['bakery', 'food', 'grocery']);
+    for (const c of changed) expect(c.deletedAt).toBe(at);
     const transactions = createRepository(db, 'transactions');
     expect(await transactions.get('t1')).toEqual({ ...transaction('t1', { categoryId: 'pharmacy', categorySource: 'rule' }), ...stamped(at) });
     expect((await transactions.get('t2'))?.categorySource).toBe('manual');
